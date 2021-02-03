@@ -11,12 +11,12 @@ from Osoby import *
 from setup_logger import log
 
 class Hlasovani(Organy):
-    
+
     def __init__(self, volebni_obdobi, data_dir='.', stahni=False):
         super(Hlasovani, self).__init__(data_dir=data_dir, stahni=stahni)
-        
-        self.volebni_obdobi = volebni_obdobi        
-        
+
+        self.volebni_obdobi = volebni_obdobi
+
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/hl-{self.volebni_obdobi}ps.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1302
@@ -34,20 +34,20 @@ class Hlasovani(Organy):
         self.paths['zmatecne'] = f"{data_dir}/zmatecne.unl"
         # Vazba mezi stenozázamem a hlasováním, tj. ve kterém stenozáznamu proběhlo hlasování
         self.paths['stenozaznam'] = f"{data_dir}/hl{volebni_obdobi}v.unl"
-        
+
         if len(self.missing_files()) > 0 or stahni:
             self.stahni()
-            
+
         # Načti datové tabulky a připrav odvozené dataové tabulky
         self.hlasovani, self._hlasovani = self.nacti_hlasovani()
         self.zmatecne, self._zmatecne = self.nacti_zmatecne()
         self.zpochybneni, self._zpochybneni = self.nacti_zpochybneni()
         self.stenozaznam, self._stenozaznam = self.nacti_stenozaznam() # Tato tabulka je pro současnou sněmovnu (2017) momentálně nevyplněná
-        
+
         self.hlasovani['zpochybneni_IND'] = self.hlasovani.id_hlasovani.isin(self.zpochybneni.id_hlasovani.unique())
-        
+
         self.hlasovani['zmatecne_IND'] = self.hlasovani.id_hlasovani.isin(self.zmatecne.id_hlasovani.unique())
-        
+
         # Připoj informace o stenozaznamu (pro snemovnu 2017 nefunguje, protože tabulka neobsahuje data pro aktualni ids)
         #self.df = pd.merge(left=self.df,right=self.stenozaznam, left_index=True, right_index=True, how='left', indicator="stenozaznam_merge")
         #self.df['stenozaznam_IND'] = self.df.stenozaznam_merge.astype(str).mask(self.df.stenozaznam_merge == 'both', True).mask(self.df.stenozaznam_merge == 'left_only', False)
@@ -55,14 +55,14 @@ class Hlasovani(Organy):
         self.hlasovani['stenozaznam_IND'] = self.hlasovani.id_hlasovani.isin(self.stenozaznam.id_hlasovani.unique())
 
         self.df = self.hlasovani
-        
+
     def nacti_hlasovani(self):
         header = {
             'id_hlasovani': 'Int64',
             'id_organ': 'Int64',
             'schuze': 'Int64',
             'cislo': 'Int64',
-            'bod': 'Int64',    
+            'bod': 'Int64',
             'datum': 'string',
             'cas': 'string',
             "pro": 'Int64',
@@ -95,13 +95,13 @@ class Hlasovani(Organy):
         df['datetime'] = df['datetime'].dt.tz_localize(tzn)
 
         # Bod pořadu schůze; je-li menší než 1, pak jde o procedurální hlasování nebo o hlasování k bodům, které v době hlasování neměly přiděleno číslo.
-        df["bod_CAT"] = df.bod.mask(df.bod < 1, 'procedurální nebo bez přiděleného čísla').mask(df.bod >= 1, "normální") 
+        df["bod_CAT"] = df.bod.mask(df.bod < 1, 'procedurální nebo bez přiděleného čísla').mask(df.bod >= 1, "normální")
 
         # Výsledek: A - přijato, R - zamítnuto, jinak zmatečné hlasování
         df["vysledek_CAT"] = df.vysledek.mask(df.vysledek == 'A', 'přijato').mask(df.vysledek == 'R', 'zamítnuto')
 
         # Druh hlasování: N - normální, R - ruční (nejsou známy hlasování jednotlivých poslanců)
-        df["druh_hlasovani_CAT"] = df.druh_hlasovani.mask(df.druh_hlasovani == 'N', 'normální').mask(df.druh_hlasovani == 'R', 'ruční') 
+        df["druh_hlasovani_CAT"] = df.druh_hlasovani.mask(df.druh_hlasovani == 'N', 'normální').mask(df.druh_hlasovani == 'R', 'ruční')
 
         return df, _df
 
