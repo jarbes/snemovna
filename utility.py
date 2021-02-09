@@ -121,23 +121,25 @@ def mask_by_values(series, mask):
         #    new_column = new_column.mask(df[column] == val_to_mask, f"{val_to_mask}{unmasked_suffix}")
     return new_series
 
+# TODO: change from inplace to return
 def drop_by_inconsistency (df, suffix, threshold):
     inc = {}
 
     for col in df.columns[df.columns.str.endswith(suffix)]:
         short_col = col[:len(col)-len(suffix)]
         difference = df[df[short_col] != df[col]]
-        print(f"'{short_col}' and '{col}' differ in {len (difference)} columns from {len(df)}")
+        difference_with_right_nans = df[(df[short_col] != df[col]) | ((~df[col].isna()) & (df[col].isna()))]
+        print(f"'{short_col}' and '{col}' differ in {len (difference)} columns from {len(df)} [difference with right nans: {len(difference_with_right_nans)}]")
         inc[short_col] = float(len(difference))/len(df)
 
     to_drop = [col for (col, inconsistency) in inc.items() if inconsistency >= threshold]
     to_skip = [col + suffix for col in inc.keys()]
     print(f"Dropping {to_drop} because of big inconsistencies.")
-    df.drop(labels=to_drop, inplace=True, axis=1)
+    new_df = df.drop(labels=to_drop, axis=1)
     print(f"Dropping {to_skip} because of abundance.")
-    df.drop(labels=to_skip, inplace=True, axis=1)
+    new_df = new_df.drop(labels=to_skip, axis=1)
 
-    return df
+    return new_df
 
 
 #######################################################################
