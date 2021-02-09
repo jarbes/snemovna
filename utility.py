@@ -127,9 +127,9 @@ def drop_by_inconsistency (df, suffix, threshold):
 
     for col in df.columns[df.columns.str.endswith(suffix)]:
         short_col = col[:len(col)-len(suffix)]
-        difference = df[df[short_col] != df[col]]
-        difference_with_right_nans = df[(df[short_col] != df[col]) | ((~df[col].isna()) & (df[col].isna()))]
-        print(f"'{short_col}' and '{col}' differ in {len (difference)} columns from {len(df)} [difference with right nans: {len(difference_with_right_nans)}]")
+        # np.nan != np.nan by default
+        difference = df[(df[short_col] != df[col]) & ~(df[short_col].isna() & df[col].isna())]
+        print(f"'{short_col}' and '{col}' differ in {len (difference)} columns from {len(df)}")
         inc[short_col] = float(len(difference))/len(df)
 
     to_drop = [col for (col, inconsistency) in inc.items() if inconsistency >= threshold]

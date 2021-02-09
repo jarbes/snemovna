@@ -85,8 +85,8 @@ class Hlasovani(HlasovaniObecne, Organy):
 
         # Přidej sloupec typu 'datetime'
         df['datetime'] = pd.to_datetime(df['datum'] + ' ' + df['cas'], format='%d.%m.%Y %H:%M')
-        tzn = pytz.timezone('Europe/Prague')
-        df['datetime'] = df['datetime'].dt.tz_localize(tzn)
+        #tzn = pytz.timezone('Europe/Prague')
+        df['datetime'] = df['datetime'].dt.tz_localize(self.tzn)
 
         # Bod pořadu schůze; je-li menší než 1, pak jde o procedurální hlasování nebo o hlasování k bodům, které v době hlasování neměly přiděleno číslo.
         df["bod_CAT"] = df.bod.mask(df.bod < 1, 'procedurální nebo bez přiděleného čísla').mask(df.bod >= 1, "normální")

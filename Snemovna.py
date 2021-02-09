@@ -16,7 +16,7 @@ from setup_logger import log
 
 class Snemovna(object):
 
-    def __init__(self, volebni_obdobi=None, data_dir='.', stahni=False, *args, **kwargs):
+    def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=False, *args, **kwargs):
         log.debug("--> Snemovna")
 
         super().__init__(*args, **kwargs)

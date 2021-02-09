@@ -33,7 +33,7 @@ class StenoText(StenoRec, Osoby):
     def __init__(self, *args, **kwargs):
         super(StenoText, self).__init__(*args, **kwargs)
 
-        self.paths['steno_text'] = f"{self.data_dir}/steno_text.csv"
+        self.paths['steno_text'] = f"{self.data_dir}/steno_text.pkl"
 
         if self.stahni == True:
             # scraping z webu
@@ -43,7 +43,7 @@ class StenoText(StenoRec, Osoby):
             # tvorba pandas tabulky
             self._steno_texty = self.results2df(results, args)
             # ulož lokálně výslednou tabulku
-            self._steno_texty.to_csv(self.paths['steno_text'], encoding='utf-8')
+            self._steno_texty.to_pickle(self.paths['steno_text'])
 
         self.steno_texty, self._steno_texty = self.nacti_steno_texty()
 
@@ -61,6 +61,41 @@ class StenoText(StenoRec, Osoby):
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno[["schuze", "turn", "od_steno_DT"]], on=['schuze', 'turn'], suffixes = ("", suffix), how='left')
         self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
 
+        # doplneni recniku, kteri mluvi pres hranici 'turn'
+        self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'id_rec_surrogate'] = \
+            self.steno_texty[self.steno_texty.id_rec.isna()].apply(lambda item: self.dopln_nahradu(item, self.steno_texty, 'id_rec'), axis=1)
+        self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'id_rec_surrogate'] = self.steno_texty[~self.steno_texty.id_rec.isna()].id_rec
+        self.steno_texty.id_rec_surrogate = self.steno_texty.id_rec_surrogate.astype('Int64')
+        
+        self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'turn_surrogate'] = \
+            self.steno_texty[self.steno_texty.id_rec.isna()].apply(lambda item: self.dopln_nahradu(item, self.steno_texty, 'turn'), axis=1)
+        self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'turn_surrogate'] = self.steno_texty[~self.steno_texty.id_rec.isna()].turn
+        self.steno_texty.turn_surrogate = self.steno_texty.turn_surrogate.astype('Int64')
+
+        # připoj id_osoba
+        m = pd.merge(left=self.steno_texty, right=self.steno_rec[['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")
+        ids = m[m.id_osoba_x.eq(m.id_osoba_y)].index
+        ne_ids = set(m.index)-set(ids)
+        assert m[m.index.isin(ne_ids) & (~m.id_osoba_x.isna())].size / m[m.index.isin(ne_ids)].size < 0.1 # This is a consistency sanity check
+        m['id_osoba'] = m['id_osoba_y']
+        m['turn'] = m['turn_x']
+        self.steno_texty = m.drop(labels=['id_osoba_x', 'id_osoba_y', 'turn_y', 'turn_x', 'aname'], axis=1)
+
+        # Merge steno, will need od_steno_DT very soon
+        suffix = "__steno"
+        self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno[["schuze", "turn", "od_steno_DT"]], on=['schuze', 'turn'], suffixes = ("", suffix), how='left')
+        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
+
+        # Merge steno_rec
+        suffix = "__steno_rec"
+        self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno_rec, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
+        self.steno_texty = self.steno_texty.drop(labels=['od_steno_DT__steno_rec', 'turn__steno_rec'], axis=1) # this inconsistency comes from 'turn-fix', 'od_steno_DT' carries the actual date
+        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
+
+        # Merge osoby
+        suffix = "__osoby"
+        self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
+        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
 
         #self.steno_texty['id_osoba'] = self.steno_texty[self.steno_texty.je_poznamka == False].groupby(['schuze', 'od_steno_DT'])['id_osoba'].fillna(method='ffill')
         #self.steno_texty['id_rec'] = self.steno_texty[self.steno_texty.je_poznamka == False].groupby(['schuze', 'od_steno_DT'])['id_rec'].fillna(method='ffill')
@@ -77,23 +112,28 @@ class StenoText(StenoRec, Osoby):
 
         self.df = self.steno_texty
 
-    def nacti_steno_texty(self):
-        df = pd.read_csv(self.paths['steno_text'], encoding='utf-8')
+    def dopln_nahradu(self, item, source, col):
+        candidates = source[source.schuze.eq(item['schuze']) & (source.turn < item['turn']) & (~source.id_rec.isna())]
+        return candidates[col].iloc[-1] if len(candidates) > 0 else None
 
-        header = {
-            'text': 'string',
-            'text_s_poznamkami': 'string',
-            'schuze': 'Int64',
-            'turn': 'Int64',
-            'id_osoba': 'Int64',
-            'id_rec': 'Int64',
-            'poznamka': 'object',
-            'je_poznamka': bool,
-            'cas': 'string',
-            'typ_casu': 'string',
-            'date': 'datetime64[ns]'
-        }
-        df = self.pretipuj(df, header, 'steno_rec')
+    def nacti_steno_texty(self):
+        #df = pd.read_pickle(self.paths['steno_text'], encoding='utf-8')
+        df = pd.read_pickle(self.paths['steno_text'])
+
+        #header = {
+        #    'text': 'string',
+        #    'text_s_poznamkami': 'string',
+        #    'schuze': 'Int64',
+        #    'turn': 'Int64',
+        #    'id_osoba': 'Int64',
+        #    'id_rec': 'Int64',
+        #    'poznamka': 'object',
+        #    'je_poznamka': bool,
+        #    'cas': 'string',
+        #    'typ_casu': 'string',
+        #    'date': 'datetime64[ns]'
+        #}
+        #df = self.pretipuj(df, header, 'steno_rec')
 
         return df, df
 
@@ -159,7 +199,7 @@ class StenoText(StenoRec, Osoby):
             'je_poznamka': bool,
             'cas': 'string',
             'typ_casu': 'string',
-            'date': 'datetime64[ns]'
+            #'date': 'datetime64[ns]'
         }
         df = self.pretipuj(df, header1, 'steno_texty [stage1]')
 
@@ -184,7 +224,7 @@ class StenoText(StenoRec, Osoby):
 
     def stahni_steno_texty(self):
         #paths = [[f"https://www.psp.cz/eknih/{self.volebni_obdobi}ps/stenprot/{item['schuze']:03d}schuz/s{item['schuze']:03d}{item['turn']:03d}.htm", './' ] for idx, item in self.steno.iterrows()]
-        paths = [["https://" + self.cesta(item[0], item[1]), './' ] for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]
+        paths = [["https://" + self.cesta(item[0], item[1]), self.data_dir ] for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]
         log.info(f"K stažení: {len(paths)} souborů.")
         #Parallel(n_jobs=-1)(delayed(self.stahni_url)(p) for p in paths)
         [self.stahni_url(p) for p in paths[:100]]
@@ -402,6 +442,8 @@ class StenoText(StenoRec, Osoby):
             return None
 
         date = self.parse_date(self.get_date(body))
+        date = pd.to_datetime(date, format="%Y-%m-%d")
+        date = date.tz_localize(self.tzn)
         #print('Date: ', date)
 
         # for every turn [i.e. stenozaznam] we have with a new speaker list
@@ -411,6 +453,7 @@ class StenoText(StenoRec, Osoby):
         for p in body.find_all('p', align='justify'):
             row = self.rozloz_paragraf(p)
             row['meta']['date'] = pd.to_datetime(date, format="%Y-%m-%d")
+            row['meta']['date'] = row['meta']['date']
 
             if len(row['meta']['text_s_poznamkami']) == 0: # Check this...
                 continue
