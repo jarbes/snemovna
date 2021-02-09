@@ -10,33 +10,32 @@ from Osoby import *
 
 from setup_logger import log
 
-class Hlasovani(Organy):
 
-    def __init__(self, volebni_obdobi, data_dir='.', stahni=False):
-        super(Hlasovani, self).__init__(data_dir=data_dir, stahni=stahni)
-
-        self.volebni_obdobi = volebni_obdobi
+# Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1302
+class HlasovaniObecne(Snemovna):
+    def __init__(self, *args, **kwargs):
+        super(HlasovaniObecne, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/hl-{self.volebni_obdobi}ps.zip")
 
-        # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1302
+
+class Hlasovani(HlasovaniObecne, Organy):
+
+    def __init__(self, *args, **kwargs):
+        super(Hlasovani, self).__init__(*args, **kwargs)
+
         # Souhrnné informace o hlasování
-        self.paths['hlasovani'] = f"{data_dir}/hl{volebni_obdobi}s.unl"
+        self.paths['hlasovani'] = f"{self.data_dir}/hl{self.volebni_obdobi}s.unl"
         # Výsledek hlasování jednotlivého poslance
         #self.paths['hlasovani_poslance'] = [f"{data_dir}/hl{volebni_obdobi}h1.unl", f"{data_dir}/hl{volebni_obdobi}h2.unl"]
-        # Časové ohraničení omluv poslanců z jednání Poslanecké sněmovny.
-        #self.paths['omluvy'] = f"{data_dir}/omluvy.unl"
         # Zpochybnění výsledků hlasování a případné opakované hlasování
-        self.paths['zpochybneni'] = f"{data_dir}/hl{volebni_obdobi}z.unl"
-        # Poslanci, kteří oznámili zpochybnění hlasování
-        #self.paths['zpochybneni_poslancem'] = f"{data_dir}/hl{volebni_obdobi}x.unl"
+        self.paths['zpochybneni'] = f"{self.data_dir}/hl{self.volebni_obdobi}z.unl"
         # Hlasování, která byla prohlášena za zmatečné, tj. na jejich výsledek nebyl brán zřetel
-        self.paths['zmatecne'] = f"{data_dir}/zmatecne.unl"
+        self.paths['zmatecne'] = f"{self.data_dir}/zmatecne.unl"
         # Vazba mezi stenozázamem a hlasováním, tj. ve kterém stenozáznamu proběhlo hlasování
-        self.paths['stenozaznam'] = f"{data_dir}/hl{volebni_obdobi}v.unl"
+        self.paths['stenozaznam'] = f"{self.data_dir}/hl{self.volebni_obdobi}v.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         # Načti datové tabulky a připrav odvozené dataové tabulky
         self.hlasovani, self._hlasovani = self.nacti_hlasovani()
@@ -81,11 +80,6 @@ class Hlasovani(Organy):
         _df = pd.read_csv(self.paths['hlasovani'], sep="|", names = header.keys(),  index_col=False, encoding='ISO-8859-2')
         df = self.pretipuj(_df, header, name='hlasovani')
 
-        # Oveř, že id_hlasovani lze použít jako index
-        # Unikátnost identifikátoru hlasování je jednou z nutných podmínek konzistence dat
-        #assert df.index.size == df.id_hlasovani.nunique()
-        #df = df.set_index('id_hlasovani')
-
         # Odstraň whitespace z řetězců
         df = strip_all_string_columns(df)
 
@@ -117,11 +111,15 @@ class Hlasovani(Organy):
 
     # Načti tabulku zpochybneni hlasovani (hl_check)
     def nacti_zpochybneni(self):
-        header = { "id_hlasovani": 'Int64', "turn": 'Int64', "mode": 'Int64', "id_h2": 'Int64', "id_h3": 'Int64'}
+        header = {
+            "id_hlasovani": 'Int64',
+            "turn": 'Int64',
+            "mode": 'Int64',
+            "id_h2": 'Int64',
+            "id_h3": 'Int64'
+        }
 
         _df = pd.read_csv(self.paths['zpochybneni'], sep="|", names = header.keys(),  index_col=False, encoding='cp1250')
-        #df = df.astype(header) # tohle dělá problém v jedné vizualizaci
-        #df = _df
         df = df = self.pretipuj(_df, header, name='zpochybneni')
 
         # 0 - žádost o opakování hlasování - v tomto případě se o této žádosti neprodleně hlasuje a teprve je-li tato žádost přijata, je hlasování opakováno;
@@ -142,8 +140,8 @@ class Hlasovani(Organy):
         return df, _df
 
 class ZmatecneHlasovani(Hlasovani):
-    def __init__(self, volebni_obdobi, data_dir='.', stahni=False):
-        super().__init__(volebni_obdobi, data_dir, stahni)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         suffix = "__hlasovani"
         self.zmatecne = pd.merge(left=self.zmatecne, right=self.hlasovani, on='id_hlasovani', suffixes = ("", suffix), how='left')
@@ -158,8 +156,8 @@ class ZmatecneHlasovani(Hlasovani):
         self.df = self.zmatecne
 
 class ZpochybneniHlasovani(Hlasovani):
-    def __init__(self, volebni_obdobi, data_dir='.', stahni=False):
-        super().__init__(volebni_obdobi, data_dir, stahni)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         suffix = "__hlasovani"
         self.zpochybneni = pd.merge(left=self.zpochybneni, right=self.hlasovani, on='id_hlasovani', suffixes = ("", suffix), how='left')
@@ -175,22 +173,16 @@ class ZpochybneniHlasovani(Hlasovani):
 
 
 class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
-    def __init__(self, volebni_obdobi, data_dir='.', stahni=False):
-        super(ZpochybneniPoslancem, self).__init__(volebni_obdobi, data_dir=data_dir, stahni=stahni)
+    def __init__(self, *args, **kwargs):
+        super(ZpochybneniPoslancem, self).__init__(*args, **kwargs)
 
-        self.volebni_obdobi = volebni_obdobi
-        self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/hl-{volebni_obdobi}ps.zip")
-
-        # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1302
         # Poslanci, kteří oznámili zpochybnění hlasování
-        self.paths['zpochybneni_poslancem'] = f"{data_dir}/hl{volebni_obdobi}x.unl"
+        self.paths['zpochybneni_poslancem'] = f"{self.data_dir}/hl{self.volebni_obdobi}x.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         self.zpochybneni_poslancem, self._zpochybneni_poslancem = self.nacti_zpochybneni_poslancem()
 
-        # Připoj informace o zpochybneni hlasovani
         # Připojuje se tabulka 'hlasovani', nikoliv 'zpochybneni_hlasovani', protože není možné mapovat řádky 'zpochybneni_hlasovani' na 'zpochybneni_poslancem'. Jedná se zřejmě o nedokonalost datového modelu.
         suffix = "__hlasovani"
         self.zpochybneni_poslancem = pd.merge(left=self.zpochybneni_poslancem, right=self.hlasovani, on='id_hlasovani', suffixes = ("", suffix), how='left')
@@ -202,6 +194,7 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
         self.zpochybneni_poslancem = drop_by_inconsistency(self.zpochybneni_poslancem, suffix, 0.1)
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        print('id_organu_dle_volebniho_obdobi', id_organu_dle_volebniho_obdobi)
         self.zpochybneni_poslancem = self.zpochybneni_poslancem[self.zpochybneni_poslancem.id_organ == id_organu_dle_volebniho_obdobi]
 
         self.df = self.zpochybneni_poslancem
@@ -218,5 +211,63 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
 
         _df = pd.read_csv(self.paths['zpochybneni_poslancem'], sep="|", names = header.keys(),  index_col=False, encoding='cp1250')
         df = self.pretipuj(_df, header)
+
+        return df, _df
+
+
+class Omluvy(HlasovaniObecne, Poslanec, Organy):
+    def __init__(self, *args, **kwargs):
+        super(Omluvy, self).__init__(*args, **kwargs)
+
+        self.paths['omluvy'] = f"{self.data_dir}/omluvy.unl"
+        self.stahni_data()
+
+        self.omluvy, self._omluvy = self.nacti_omluvy()
+
+        # Připoj informace o poslanci
+        suffix = "__poslanec"
+        self.omluvy = pd.merge(left=self.omluvy, right=self.poslanec, on='id_poslanec', suffixes = ("", suffix), how='left')
+        self.omluvy = drop_by_inconsistency(self.omluvy, suffix, 0.1)
+
+        # Připoj Orgány
+        suffix = "__organy"
+        self.omluvy = pd.merge(left=self.omluvy, right=self.organy, on='id_organ', suffixes=("", suffix), how='left')
+        self.organy =  drop_by_inconsistency(self.omluvy, suffix, 0.1)
+
+        # Zúžení na volební období
+        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.omluvy = self.omluvy[self.omluvy.id_obdobi == id_organu_dle_volebniho_obdobi]
+
+        self.df = self.omluvy
+
+    def nacti_omluvy(self):
+        # Tabulka zaznamenává časové ohraničení omluv poslanců z jednání Poslanecké sněmovny.
+        # Omluvy poslanců sděluje předsedající na začátku nebo v průběhu jednacího dne.
+        # Data z tabulky se použijí pouze k nahrazení výsledku typu '@', tj. pokud výsledek hlasování jednotlivého poslance je nepřihlášen, pak pokud zároveň čas hlasování spadá do časového intervalu omluvy, pak se za výsledek považuje 'M', tj. omluven.
+        #Pokud je poslanec omluven a zároveň je přihlášen, pak výsledek jeho hlasování má přednost před omluvou.
+        header = {
+            # Identifikátor volebního období, viz organy:id_organ
+            "id_organ": 'Int64',
+            # Identifikátor poslance, viz poslanec:id_poslanec
+            "id_poslanec": 'Int64',
+            # Datum omluvy
+            "den": 'string',
+            # Čas začátku omluvy, pokud je null, pak i omluvy:do je null a jedná se o omluvu na celý jednací den.
+            "od": 'string',
+            # Čas konce omluvy, pokud je null, pak i omluvy:od je null a jedná se o omluvu na celý jednací den.
+            "do": 'string'
+        }
+
+        _df = pd.read_csv(self.paths['omluvy'], sep="|", names = header,  index_col=False, encoding='cp1250')
+        df = self.pretipuj(_df, header, 'omluvy')
+
+        # TODO !!!!
+        # Přidej sloupec typu 'datetime_from'
+        #df['datetime_from'] = pd.to_datetime(df['den'] + ' ' + df['od'], format='%d.%m.%Y %H:%M')
+        #df['datetime_from'] = df['datetime_from'].dt.tz_localize(self.tzn)
+
+        # Přidej sloupec typu 'datetime_to'
+        #df['datetime_to'] = pd.to_datetime(df['den'] + ' ' + df['do'], format='%d.%m.%Y %H:%M')
+        #df['datetime_to'] = df['datetime_to'].dt.tz_localize(tzn)
 
         return df, _df

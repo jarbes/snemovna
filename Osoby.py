@@ -11,18 +11,17 @@ from setup_logger import log
 
 class TypOrganu(Snemovna):
 
-    def __init__(self, data_dir=".", stahni=False):
+    def __init__(self, *args, **kwargs):
         log.debug("--> TypOrganu")
-        super(TypOrganu, self).__init__(data_dir=data_dir)
+        super(TypOrganu, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Organy - cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
-        self.paths['typ_organu'] = f"{data_dir}/typ_organu.unl"
+        self.paths['typ_organu'] = f"{self.data_dir}/typ_organu.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         self.typ_organu, self._typ_organu = self.nacti_typ_organu()
 
@@ -57,22 +56,21 @@ class TypOrganu(Snemovna):
         return df, _df
 
 class Organy(TypOrganu):
-    def __init__(self, data_dir='.', stahni=False):
+    def __init__(self,  *args, **kwargs):
         print("--> Organy")
-        super(Organy, self).__init__(data_dir=data_dir, stahni=stahni)
+        super(Organy, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         #Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
         # slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
-        self.paths['funkce'] = f"{data_dir}/funkce.unl"
+        self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
         # Některé orgány mají nadřazený orgán a pak je položka organy:organ_id_organ vyplněna,
         # přičemž pouze v některých případech se tyto vazby využívají.
-        self.paths['organy'] = f"{data_dir}/organy.unl"
+        self.paths['organy'] = f"{self.data_dir}/organy.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         self.organy, self._organy = self.nacti_organy()
 
@@ -116,18 +114,16 @@ class Organy(TypOrganu):
         return df, _df
 
 class TypFunkce(TypOrganu):
-    def __init__(self, data_dir=".", stahni=False):
+    def __init__(self, *args, **kwargs):
         print("--> TypFunkce")
-        super(TypFunkce, self).__init__(data_dir=data_dir, stahni=False)
+        super(TypFunkce, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Organy - cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
-        self.paths['typ_funkce'] = f"{data_dir}/typ_funkce.unl"
-        print(self.paths)
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.paths['typ_funkce'] = f"{self.data_dir}/typ_funkce.unl"
+        self.stahni_data()
 
         self.typ_funkce, self._typ_funkce = self.nacti_typ_funkce()
 
@@ -175,19 +171,18 @@ class TypFunkce(TypOrganu):
         return df, _df
 
 class Funkce(Organy, TypFunkce):
-    def __init__(self, data_dir='.', stahni=False):
+    def __init__(self, *args, **kwargs):
         print("--> Funkce")
-        super(Funkce, self).__init__(data_dir=data_dir, stahni=stahni)
+        super(Funkce, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         #Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
         # slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
-        self.paths['funkce'] = f"{data_dir}/funkce.unl"
+        self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         self.funkce, self._funkce = self.nacti_funkce()
 
@@ -225,9 +220,9 @@ class Funkce(Organy, TypFunkce):
         return df, _df
 
 class Osoby(Snemovna):
-    def __init__(self, data_dir='.', stahni=False):
+    def __init__(self, *args, **kwargs):
         print("--> Osoby")
-        super(Osoby, self).__init__(data_dir=data_dir)
+        super(Osoby, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
@@ -235,14 +230,13 @@ class Osoby(Snemovna):
         # Jména osob, které jsou zařazeni v orgánech.
         # Vzhledem k tomu, že k jednoznačnému rozlišení osob často není dostatek informací,
         # je možné, že ne všechny záznamy odkazují na jedinečné osoby, tj. některé osoby jsou v tabulce vícekrát.
-        self.paths['osoby'] = f"{data_dir}/osoby.unl"
+        self.paths['osoby'] = f"{self.data_dir}/osoby.unl"
         # Zařazení v orgánu nebo data funkcí osoby v orgánu. Pokud je zarazeni:do_o typu null, pak jde o aktuální zařazení.
-        #self.paths['osoby_zarazeni'] = f"{data_dir}/zarazeni.unl"
+        #self.paths['osoby_zarazeni'] = f"{self.data_dir}/zarazeni.unl"
         # Obsahuje vazby na externí systémy. Je-li typ = 1, pak jde o vazbu na evidenci senátorů na senat.cz
-        self.paths['osoba_extra'] = f"{data_dir}/osoba_extra.unl"
+        self.paths['osoba_extra'] = f"{self.data_dir}/osoba_extra.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         self.osoby, self._osoby = self.nacti_osoby()
         self.osoba_extra, self.osoba_extra = self.nacti_osoba_extra()
@@ -295,23 +289,20 @@ class Osoby(Snemovna):
 
 class Poslanec(Osoby, Organy):
 
-    def __init__(self, volebni_obdobi, data_dir='.', stahni=False):
+    def __init__(self, *args, **kwargs):
         print("--> Poslanec")
-        super(Poslanec, self).__init__(data_dir=data_dir)
-
-        self.volebni_obdobi = volebni_obdobi
+        super(Poslanec, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Další informace o poslanci vzhledem k volebnímu období: kontaktní údaje, adresa regionální kanceláře a podobně.
         # Některé údaje jsou pouze v aktuálním volebním období.
-        self.paths['poslanec'] = f"{data_dir}/poslanec.unl"
+        self.paths['poslanec'] = f"{self.data_dir}/poslanec.unl"
         # Obsahuje GPS souřadnice regionálních kanceláří poslanců.
-        self.paths['pkgps'] = f"{data_dir}/pkgps.unl"
+        self.paths['pkgps'] = f"{self.data_dir}/pkgps.unl"
 
-        if len(self.missing_files()) > 0 or stahni:
-            self.stahni()
+        self.stahni_data()
 
         self.poslanec, self._poslanec = self.nacti_poslance()
         self.pkgps, self._pkgps = self.nacti_pkgps()
@@ -380,3 +371,4 @@ class Poslanec(Osoby, Organy):
         df = self.pretipuj(_df, header, 'pkgps')
 
         return df, _df
+

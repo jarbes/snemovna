@@ -1,4 +1,3 @@
-
 from Snemovna import *
 from Osoby import *
 from Schuze import *
@@ -98,6 +97,7 @@ class StenoBod(Steno, Organy):
 
 
 class StenoRec(Steno, Osoby, BodSchuze):
+
     def __init__(self, *args, **kwargs):
         super(StenoRec, self).__init__(*args, **kwargs)
 
@@ -147,3 +147,4 @@ class StenoRec(Steno, Osoby, BodSchuze):
             mask(df.druh == 5, 'řečník')
 
         return df, _df
+
