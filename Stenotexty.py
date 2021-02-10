@@ -11,7 +11,8 @@ import os
 import requests
 from time import time
 from urllib.parse import urlparse
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, cpu_count
+#from multiprocessing.pool import ThreadPool
 
 from Snemovna import *
 from Osoby import *
@@ -61,12 +62,15 @@ class StenoText(StenoRec, Osoby):
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno[["schuze", "turn", "od_steno_DT"]], on=['schuze', 'turn'], suffixes = ("", suffix), how='left')
         self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
 
-        # doplneni recniku, kteri mluvi pres hranici 'turn'
+        # Doplneni recnika, který mluvil na konci minulého stenozáznamu, a tudíž není v aktuálním stenozáznamu identifikovatelný.
+        # Přetahující řečník je zpravidla zmíněn v některém z minulých stenozáznamů (turns).
+        # Tento stenozáznam je nutné vyhledat a uložit jeho číslo (id_turn_surrogate) a číslo řečníka (id_rec_surrogate).
+        # V joinu se steno_rec se pak použije id_rec_surrogate místo id_rec a id_turn_surrogate místo id_turn.
         self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'id_rec_surrogate'] = \
             self.steno_texty[self.steno_texty.id_rec.isna()].apply(lambda item: self.dopln_nahradu(item, self.steno_texty, 'id_rec'), axis=1)
         self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'id_rec_surrogate'] = self.steno_texty[~self.steno_texty.id_rec.isna()].id_rec
         self.steno_texty.id_rec_surrogate = self.steno_texty.id_rec_surrogate.astype('Int64')
-        
+
         self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'turn_surrogate'] = \
             self.steno_texty[self.steno_texty.id_rec.isna()].apply(lambda item: self.dopln_nahradu(item, self.steno_texty, 'turn'), axis=1)
         self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'turn_surrogate'] = self.steno_texty[~self.steno_texty.id_rec.isna()].turn
@@ -117,24 +121,7 @@ class StenoText(StenoRec, Osoby):
         return candidates[col].iloc[-1] if len(candidates) > 0 else None
 
     def nacti_steno_texty(self):
-        #df = pd.read_pickle(self.paths['steno_text'], encoding='utf-8')
         df = pd.read_pickle(self.paths['steno_text'])
-
-        #header = {
-        #    'text': 'string',
-        #    'text_s_poznamkami': 'string',
-        #    'schuze': 'Int64',
-        #    'turn': 'Int64',
-        #    'id_osoba': 'Int64',
-        #    'id_rec': 'Int64',
-        #    'poznamka': 'object',
-        #    'je_poznamka': bool,
-        #    'cas': 'string',
-        #    'typ_casu': 'string',
-        #    'date': 'datetime64[ns]'
-        #}
-        #df = self.pretipuj(df, header, 'steno_rec')
-
         return df, df
 
     def results2df(self, results, args):
@@ -214,23 +201,23 @@ class StenoText(StenoRec, Osoby):
             "path": self.data_dir + '/' + self.cesta(item[0], item[1]),
             "schuze": item[0],
             "turn": item[1]
-        } for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]
+        } for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]# Do we need some kind of sort here?
+        paths = [item['path'] for item in args]
 
-        log.info(f"K zpracování: {len(args)} souborů.")
-        #results = Parallel(n_jobs=-1)(delayed(self.zpracuj_stenozaznam)(item['path']) for item in args)
-        results = [self.zpracuj_stenozaznam(item['path']) for item in args[:100]]
+        log.info(f"K zpracování: {len(paths)} souborů.")
+        n_jobs = max([12, 3*cpu_count()])
+        results = Parallel(n_jobs=n_jobs, verbose=1, backend="threading")(delayed(self.zpracuj_stenozaznam)(item) for item in paths)
 
         return results, args
 
     def stahni_steno_texty(self):
-        #paths = [[f"https://www.psp.cz/eknih/{self.volebni_obdobi}ps/stenprot/{item['schuze']:03d}schuz/s{item['schuze']:03d}{item['turn']:03d}.htm", './' ] for idx, item in self.steno.iterrows()]
-        paths = [["https://" + self.cesta(item[0], item[1]), self.data_dir ] for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]
-        log.info(f"K stažení: {len(paths)} souborů.")
-        #Parallel(n_jobs=-1)(delayed(self.stahni_url)(p) for p in paths)
-        [self.stahni_url(p) for p in paths[:100]]
+        args = [["https://" + self.cesta(item[0], item[1]), self.data_dir ] for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]
+        log.info(f"K stažení: {len(args)} souborů.")
+        n_jobs = max([12, 3*cpu_count()])
+        Parallel(n_jobs=n_jobs, verbose=1, backend="threading")(delayed(self.stahni_url)(item) for item in args)
 
     def stahni_url(self, arg):
-        print('.', end='')
+        #print('.', end='')
         url, dir_prefix = arg
         u = urlparse(url)
         n = u.netloc
@@ -239,7 +226,7 @@ class StenoText(StenoRec, Osoby):
         d = os.path.dirname(p)
         dirname = dir_prefix + '/' + n + d
         path = dirname + '/' + filename
-        log.debug(f"path: '{path}'")
+        #log.debug(f"path: '{path}'")
         Path(dirname).mkdir(parents=True, exist_ok=True)
         r = requests.get(url, stream = True)
         with open(path, 'wb') as f:
@@ -428,7 +415,7 @@ class StenoText(StenoRec, Osoby):
         return "%d-%02d-%02d" % (year, mo, day)
 
     def zpracuj_stenozaznam(self, filename):
-        print('*', end='')
+        #print('*', end='')
         if not os.path.exists(filename):
             log.error(f"Soubor {filename} neexistuje, přeskakuji.")
             return None
@@ -444,7 +431,6 @@ class StenoText(StenoRec, Osoby):
         date = self.parse_date(self.get_date(body))
         date = pd.to_datetime(date, format="%Y-%m-%d")
         date = date.tz_localize(self.tzn)
-        #print('Date: ', date)
 
         # for every turn [i.e. stenozaznam] we have with a new speaker list
         last_recnik = None
