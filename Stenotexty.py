@@ -1,6 +1,8 @@
 import re
 from collections import namedtuple
 
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 
@@ -48,35 +50,17 @@ class StenoText(StenoRec, Osoby):
 
         self.steno_texty, self._steno_texty = self.nacti_steno_texty()
 
-        # Doplnění chybějících údajů o řečníkovi (id_osoba) a identifikátoru promluvy (id_rec)
-        # Algoritmus: Seřaď promluvy schuze a turn. Pokud na začátku některého 'turn' chybí řečník, odpovídá poslednímu řečníkovi z předcházejícícho turn stejné schůze (sic!)
-        m = pd.merge(left=self.steno_texty, right=self.steno_rec[['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn", "id_rec"], right_on=["schuze", "turn", "aname"], how="left")
-        ids = m[m.id_osoba_x.eq(m.id_osoba_y)].index
-        ne_ids = set(m.index)-set(ids)
-        assert m[m.index.isin(ne_ids) & (~m.id_osoba_x.isna())].size / m[m.index.isin(ne_ids)].size < 0.1 # This is a consistency sanity check
-        m['id_osoba'] = m['id_osoba_y']
-        self.steno_texty = m.drop(labels=['id_osoba_x', 'id_osoba_y', 'aname'], axis=1)
-
-        # Merge steno, will need od_steno_DT very soon
-        suffix = "__steno"
-        self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno[["schuze", "turn", "od_steno_DT"]], on=['schuze', 'turn'], suffixes = ("", suffix), how='left')
-        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
-
         # Doplneni recnika, který mluvil na konci minulého stenozáznamu, a tudíž není v aktuálním stenozáznamu identifikovatelný.
         # Přetahující řečník je zpravidla zmíněn v některém z minulých stenozáznamů (turns).
         # Tento stenozáznam je nutné vyhledat a uložit jeho číslo (id_turn_surrogate) a číslo řečníka (id_rec_surrogate).
         # V joinu se steno_rec se pak použije id_rec_surrogate místo id_rec a id_turn_surrogate místo id_turn.
-        self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'id_rec_surrogate'] = \
-            self.steno_texty[self.steno_texty.id_rec.isna()].apply(lambda item: self.dopln_nahradu(item, self.steno_texty, 'id_rec'), axis=1)
-        self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'id_rec_surrogate'] = self.steno_texty[~self.steno_texty.id_rec.isna()].id_rec
-        self.steno_texty.id_rec_surrogate = self.steno_texty.id_rec_surrogate.astype('Int64')
+        self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'turn_surrogate'] = np.nan
+        self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'turn_surrogate'] = self.steno_texty.turn
+        self.steno_texty['turn_surrogate'] = self.steno_texty.groupby("schuze")['turn_surrogate'].ffill().astype('Int64')
+        self.steno_texty['id_rec_surrogate'] = self.steno_texty['id_rec']
+        self.steno_texty['id_rec_surrogate'] = self.steno_texty.groupby("schuze")['id_rec_surrogate'].ffill().astype('Int64')
 
-        self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'turn_surrogate'] = \
-            self.steno_texty[self.steno_texty.id_rec.isna()].apply(lambda item: self.dopln_nahradu(item, self.steno_texty, 'turn'), axis=1)
-        self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'turn_surrogate'] = self.steno_texty[~self.steno_texty.id_rec.isna()].turn
-        self.steno_texty.turn_surrogate = self.steno_texty.turn_surrogate.astype('Int64')
-
-        # připoj id_osoba
+        # připoj osobu ze steno_rec ... we simply add id_osoba to places where it's missing
         m = pd.merge(left=self.steno_texty, right=self.steno_rec[['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")
         ids = m[m.id_osoba_x.eq(m.id_osoba_y)].index
         ne_ids = set(m.index)-set(ids)
@@ -85,15 +69,10 @@ class StenoText(StenoRec, Osoby):
         m['turn'] = m['turn_x']
         self.steno_texty = m.drop(labels=['id_osoba_x', 'id_osoba_y', 'turn_y', 'turn_x', 'aname'], axis=1)
 
-        # Merge steno, will need od_steno_DT very soon
-        suffix = "__steno"
-        self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno[["schuze", "turn", "od_steno_DT"]], on=['schuze', 'turn'], suffixes = ("", suffix), how='left')
-        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
-
         # Merge steno_rec
         suffix = "__steno_rec"
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno_rec, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
-        self.steno_texty = self.steno_texty.drop(labels=['od_steno_DT__steno_rec', 'turn__steno_rec'], axis=1) # this inconsistency comes from 'turn-fix', 'od_steno_DT' carries the actual date
+        self.steno_texty = self.steno_texty.drop(labels=['turn__steno_rec'], axis=1) # this inconsistency comes from the 'turn-fix'
         self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
 
         # Merge osoby
@@ -101,24 +80,7 @@ class StenoText(StenoRec, Osoby):
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
         self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
 
-        #self.steno_texty['id_osoba'] = self.steno_texty[self.steno_texty.je_poznamka == False].groupby(['schuze', 'od_steno_DT'])['id_osoba'].fillna(method='ffill')
-        #self.steno_texty['id_rec'] = self.steno_texty[self.steno_texty.je_poznamka == False].groupby(['schuze', 'od_steno_DT'])['id_rec'].fillna(method='ffill')
-
-        ## Merge osoby
-        #suffix = "__osoby"
-        #self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        #self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
-
-        # Merge steno_rec
-        #suffix = "__steno_rec"
-        #self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno_rec, left_on=['schuze', 'turn', 'id_rec'], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
-        #self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
-
         self.df = self.steno_texty
-
-    def dopln_nahradu(self, item, source, col):
-        candidates = source[source.schuze.eq(item['schuze']) & (source.turn < item['turn']) & (~source.id_rec.isna())]
-        return candidates[col].iloc[-1] if len(candidates) > 0 else None
 
     def nacti_steno_texty(self):
         df = pd.read_pickle(self.paths['steno_text'])
@@ -205,8 +167,8 @@ class StenoText(StenoRec, Osoby):
         paths = [item['path'] for item in args]
 
         log.info(f"K zpracování: {len(paths)} souborů.")
-        n_jobs = max([12, 3*cpu_count()])
-        results = Parallel(n_jobs=n_jobs, verbose=1, backend="threading")(delayed(self.zpracuj_stenozaznam)(item) for item in paths)
+        #n_jobs = max([12, 3*cpu_count()])
+        results = Parallel(n_jobs=-1, verbose=1, backend="threading")(delayed(self.zpracuj_stenozaznam)(item) for item in paths)
 
         return results, args
 
