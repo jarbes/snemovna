@@ -41,7 +41,7 @@ class Hlasovani(HlasovaniObecne, Organy):
         self.hlasovani, self._hlasovani = self.nacti_hlasovani()
         self.zmatecne, self._zmatecne = self.nacti_zmatecne()
         self.zpochybneni, self._zpochybneni = self.nacti_zpochybneni()
-        self.stenozaznam, self._stenozaznam = self.nacti_stenozaznam() # Tato tabulka je pro současnou sněmovnu (2017) momentálně nevyplněná
+        self.stenozaznam, self._stenozaznam = self.nacti_stenozaznam() # Tato tabulka je pro současnou sněmovnu (2017) nevyplněná
 
         self.hlasovani['zpochybneni_IND'] = self.hlasovani.id_hlasovani.isin(self.zpochybneni.id_hlasovani.unique())
 
@@ -145,7 +145,7 @@ class ZmatecneHlasovani(Hlasovani):
 
         suffix = "__hlasovani"
         self.zmatecne = pd.merge(left=self.zmatecne, right=self.hlasovani, on='id_hlasovani', suffixes = ("", suffix), how='left')
-        self.zmatecne = drop_by_inconsistency(self.zmatecne, suffix, 0.1)
+        self.zmatecne = drop_by_inconsistency(self.zmatecne, suffix, 0.1, 'zmatecne', 'hlasovani')
 
         # Heuristika, která vyděluje zpochybneni hlasování pro dané volební období.
         # V datech tato informace explicitně není.
@@ -161,7 +161,7 @@ class ZpochybneniHlasovani(Hlasovani):
 
         suffix = "__hlasovani"
         self.zpochybneni = pd.merge(left=self.zpochybneni, right=self.hlasovani, on='id_hlasovani', suffixes = ("", suffix), how='left')
-        self.zpochybneni = drop_by_inconsistency(self.zpochybneni, suffix, 0.1)
+        self.zpochybneni = drop_by_inconsistency(self.zpochybneni, suffix, 0.1, 'zpochybneni', 'hlasovani')
 
         # Heuristika, která vyděluje zpochybneni hlasování pro dané volební období.
         # V datech tato informace explicitně není.
@@ -186,15 +186,14 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
         # Připojuje se tabulka 'hlasovani', nikoliv 'zpochybneni_hlasovani', protože není možné mapovat řádky 'zpochybneni_hlasovani' na 'zpochybneni_poslancem'. Jedná se zřejmě o nedokonalost datového modelu.
         suffix = "__hlasovani"
         self.zpochybneni_poslancem = pd.merge(left=self.zpochybneni_poslancem, right=self.hlasovani, on='id_hlasovani', suffixes = ("", suffix), how='left')
-        self.zpochybneni_poslancem = drop_by_inconsistency(self.zpochybneni_poslancem, suffix, 0.1)
+        self.zpochybneni_poslancem = drop_by_inconsistency(self.zpochybneni_poslancem, suffix, 0.1, 'zpochybneni_poslancem', 'hlasovani')
 
         # Připoj informace o osobe # TODO: Neměli by se připojovat spíš Poslanci než Osoby?
         suffix = "__osoby"
         self.zpochybneni_poslancem = pd.merge(left=self.zpochybneni_poslancem, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.zpochybneni_poslancem = drop_by_inconsistency(self.zpochybneni_poslancem, suffix, 0.1)
+        self.zpochybneni_poslancem = drop_by_inconsistency(self.zpochybneni_poslancem, suffix, 0.1, 'zpochybneni_poslancem', 'osoby')
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        print('id_organu_dle_volebniho_obdobi', id_organu_dle_volebniho_obdobi)
         self.zpochybneni_poslancem = self.zpochybneni_poslancem[self.zpochybneni_poslancem.id_organ == id_organu_dle_volebniho_obdobi]
 
         self.df = self.zpochybneni_poslancem
@@ -227,12 +226,12 @@ class Omluvy(HlasovaniObecne, Poslanec, Organy):
         # Připoj informace o poslanci
         suffix = "__poslanec"
         self.omluvy = pd.merge(left=self.omluvy, right=self.poslanec, on='id_poslanec', suffixes = ("", suffix), how='left')
-        self.omluvy = drop_by_inconsistency(self.omluvy, suffix, 0.1)
+        self.omluvy = drop_by_inconsistency(self.omluvy, suffix, 0.1, 'omluvy', 'poslanec')
 
         # Připoj Orgány
         suffix = "__organy"
         self.omluvy = pd.merge(left=self.omluvy, right=self.organy, on='id_organ', suffixes=("", suffix), how='left')
-        self.organy =  drop_by_inconsistency(self.omluvy, suffix, 0.1)
+        self.organy =  drop_by_inconsistency(self.omluvy, suffix, 0.1, 'omluvy', 'organy')
 
         # Zúžení na volební období
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ

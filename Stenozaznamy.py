@@ -7,17 +7,22 @@ from setup_logger import log
 # Stenozáznamy jsou těsnopisecké záznamy jednání Poslanecké sněmovny a jejích orgánů. V novějších volebních období obsahují časový úsek řádově 10 minut (případně mimo doby přerušení a podobně). Jsou číslovány v číselné řadě od začátku schůze.
 
 class StenoObecne(Snemovna):
+
     def __init__(self, *args, **kwargs):
+        log.debug('--> StenoObecne')
         super(StenoObecne, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/steno.zip")
+        log.debug('<-- StenoObecne')
 
 
 # Tabulka steno
 # Obsahuje záznamy o jednotlivých stenozáznamech (turnech). Položky od_t a do_t nemusí ve všech případech obsahovat správná data, zvláště v případech písařských chyb a obvykle se v dohledné době opraví.
 
 class Steno(StenoObecne, Organy):
+
     def __init__(self, *args, **kwargs):
+        log.debug('--> Steno')
         super(Steno, self).__init__(*args, **kwargs)
 
         self.paths['steno'] = f"{self.data_dir}/steno.unl"
@@ -30,6 +35,7 @@ class Steno(StenoObecne, Organy):
         self.steno = self.steno[self.steno.id_org == id_organu_dle_volebniho_obdobi]
 
         self.df = self.steno
+        log.debug('<-- Steno')
 
     def nacti_steno(self):
         header = {
@@ -58,6 +64,7 @@ class Steno(StenoObecne, Organy):
 
 class StenoBod(Steno, Organy):
     def __init__(self, *args, **kwargs):
+        log.debug('--> StenoBod')
         super(StenoBod, self).__init__(*args, **kwargs)
 
         self.paths['steno_bod'] = f"{self.data_dir}/steno_bod.unl"
@@ -68,12 +75,13 @@ class StenoBod(Steno, Organy):
         # Merge steno
         suffix = "__steno"
         self.steno_bod = pd.merge(left=self.steno_bod, right=self.steno, on='id_steno', suffixes = ("", suffix), how='left')
-        self.steno_bod = drop_by_inconsistency(self.steno_bod, suffix, 0.1)
+        self.steno_bod = drop_by_inconsistency(self.steno_bod, suffix, 0.1, "steno_bod", "steno")
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
         self.steno_bod = self.steno_bod[self.steno_bod.id_org == id_organu_dle_volebniho_obdobi]
 
         self.df = self.steno_bod
+        log.debug('<-- StenoBod')
 
     def nacti_steno_bod(self):
         header = {
@@ -95,10 +103,10 @@ class StenoBod(Steno, Organy):
 # Pokud je druh == 4, tj. předsedající, nemusí to automaticky znamenat, že v rámci jeho vystoupení se bude jednat pouze o řízení schůze - ačkoliv by řídící schůze se měl vyvarovat projevů jiných než k řízení schůze, může se stát, že pokud to nikdo nerozporuje, může vystoupit i s jiným projevem (např. za situace, kdy není k dispozici žádný místopředseda či předseda PS, který by za něj převzal řízení schůze).
 # Záznamy v druh typu ověřeno jsou zkontrolovány na základě automatického vyhledání záznamů o vystoupení, které neodpovídají jejich obvyklému řazení.
 
-
 class StenoRec(Steno, Osoby, BodSchuze):
 
     def __init__(self, *args, **kwargs):
+        log.debug('--> StenoRec')
         super(StenoRec, self).__init__(*args, **kwargs)
 
         self.paths['steno_rec'] = f"{self.data_dir}/rec.unl"
@@ -109,7 +117,7 @@ class StenoRec(Steno, Osoby, BodSchuze):
         # Merge steno
         suffix = "__steno"
         self.steno_rec = pd.merge(left=self.steno_rec, right=self.steno, on='id_steno', suffixes = ("", suffix), how='left')
-        self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1)
+        self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1, "steno_rec", "steno")
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
         self.steno_rec = self.steno_rec[self.steno_rec.id_org == id_organu_dle_volebniho_obdobi]
@@ -117,14 +125,16 @@ class StenoRec(Steno, Osoby, BodSchuze):
         # Merge osoby
         suffix = "__osoby"
         self.steno_rec = pd.merge(left=self.steno_rec, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1)
+        self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'osoby')
 
         # Merge bod schuze
         #suffix = "__bod_schuze"
         #self.steno_rec = pd.merge(left=self.steno_rec, right=self.bod_schuze, on='id_bod', suffixes = ("", suffix), how='left')
-        #self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1)
+        #self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'bod_schuze')
 
         self.df = self.steno_rec
+
+        log.debug('<-- StenoRec')
 
     def nacti_steno_rec(self):
         header = {

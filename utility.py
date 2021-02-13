@@ -31,7 +31,6 @@ def download_and_unzip(url, zip_file_name, data_dir):
     log.debug(f"Rozbaluji data do: '{data_dir}'")
     with zipfile.ZipFile(zip_file_name, 'r') as zip_ref:
         zip_ref.extractall(data_dir)
-    log.debug(f"Soubory v adresáři: {listdir(data_dir)}")
 
 
 #######################################################################
@@ -75,7 +74,6 @@ def popis_nulove_hodnoty(df):
         print(f"Sloupec '{col}' obsahuje {100*cnt/len(df):.2f}% ({cnt} z {len(df)}) nulových hodnot (např. NaNů).")
 
 def popis_sloupec(df, column):
-    #print(df[column].describe())
     print(f"Typ: {df[column].dtype}")
     print(f"Počet hodnot: {df[column].count()}")
     print(f"Počet unikátních hodnot: {df[column].nunique()}")
@@ -117,30 +115,45 @@ def mask_by_values(series, mask):
     for val_to_mask in series.unique():
         if val_to_mask in mask.keys(): # mask it
             new_series = new_series.mask(series == val_to_mask, mask[val_to_mask])
-        #else:
-        #    new_column = new_column.mask(df[column] == val_to_mask, f"{val_to_mask}{unmasked_suffix}")
+
     return new_series
 
 # TODO: change from inplace to return
-def drop_by_inconsistency (df, suffix, threshold):
-    inc = {}
+def drop_by_inconsistency (df, suffix, threshold, t1_name=None, t2_name=None):
+    inconsistency = {}
+    abundance = []
 
     for col in df.columns[df.columns.str.endswith(suffix)]:
         short_col = col[:len(col)-len(suffix)]
-        # np.nan != np.nan by default
+
+        # Note: np.nan != np.nan by default
         difference = df[(df[short_col] != df[col]) & ~(df[short_col].isna() & df[col].isna())]
-        print(f"'{short_col}' and '{col}' differ in {len (difference)} columns from {len(df)}")
-        inc[short_col] = float(len(difference))/len(df)
+        if len(difference) > 0:
+          inconsistency[short_col] = float(len(difference))/len(df)
+          log.warning(f"While merging '{t1_name}' with '{t2_name}': Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}, inconsistency ratio: {inconsistency[short_col]:.2f}")
+        else:
+          abundance.append(short_col)
 
-    to_drop = [col for (col, inconsistency) in inc.items() if inconsistency >= threshold]
-    to_skip = [col + suffix for col in inc.keys()]
-    print(f"Dropping {to_drop} because of big inconsistencies.")
-    new_df = df.drop(labels=to_drop, axis=1)
-    print(f"Dropping {to_skip} because of abundance.")
-    new_df = new_df.drop(labels=to_skip, axis=1)
+    to_drop = [col for (col, i) in inconsistency.items() if i >= threshold]
+    if len(to_drop) > 0:
+        log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_drop} because of big inconsistency.")
+        df = df.drop(labels=to_drop, axis=1)
 
-    return new_df
+    to_skip = [col + suffix for col in set(inconsistency.keys()).union(abundance)]
+    if len(to_skip) > 0:
+      log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_skip} because of abundance.")
+      df = df.drop(labels=to_skip, axis=1)
 
+    return df
+
+def format_to_datetime_and_report_skips(df, col, to_format):
+    srs = df[col]
+    new_srs = pd.to_datetime(srs[~srs.isna()], format=to_format, errors="coerce")
+    skipped = srs[(~srs.isna() & new_srs.isna())| (new_srs.dt.strftime(to_format).ne(srs))]
+    if len(skipped) > 0:
+        log.warning(f"Skipped {len(skipped)} values while formatting '{col}' to datetime. Using format '{to_format}'. Example of skipped rows: {skipped.to_list()[:5]}.")
+
+    return new_srs
 
 #######################################################################
 # Zobrazování dat v pandas tabulkách

@@ -38,11 +38,10 @@ class Snemovna(object):
     def missing_files(self):
         missing_files = []
         paths_flat = sum([item if isinstance(item, list) else [item] for item in self.paths.values()], [])
-        print(f"Checking for: {paths_flat}")
         for p in paths_flat:
             if path.isfile(p) is not True:
                 missing_files.append(p)
-        print(f"Missing files: {missing_files}")
+        log.debug(f"Number of missing files: {len(missing_files)}")
         return missing_files
 
     def nastav_datovy_zdroj(self, url):
@@ -50,24 +49,23 @@ class Snemovna(object):
         self.file_name = os.path.basename(a.path)
         self.url = url
         self.zip = f"{self.data_dir}/{self.file_name}"
-        print(self.zip)
+        log.debug(f"Setting zip file path to: {self.zip}")
 
     def stahni_data(self):
         mf = self.missing_files()
-        log.debug(f"Missing files: {mf}, stahni: {self.stahni}")
+        log.debug(f"Number of missing files: {len(mf)}, stahni: {self.stahni}")
         if (len(mf) > 0) or self.stahni:
             if (self.url is not None) and (self.zip is not None) and (self.data_dir is not None):
                 download_and_unzip(self.url, self.zip, self.data_dir)
             else:
-                print("Error: download paths not set!")
+                log.error("Error: download paths not set!")
 
     def pretipuj(self, df, header, name=None):
         if name is not None:
-            print(f"Tabulka {name}:")
-        #new_df = df.copy()
+            log.debug(f"Tabulka {name}:")
         for col in df.columns:
             if col in header:
-                print(f"Přetypovávám sloupec: '{col}'.")
+                log.debug(f"Přetypovávám sloupec: '{col}'.")
                 df[col] = df[col].astype(header[col])
         return df
 

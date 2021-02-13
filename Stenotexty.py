@@ -31,12 +31,12 @@ Cas = namedtuple('Cas', ['typ', 'hodina', 'minuta'])
 # Pozor: Texty nejsou součástí oficiálních dat PS!
 # Texty se stahují a scrapují z internetových stránek PS, viz např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
-class StenoText(StenoRec, Osoby):
+class StenoTexty(StenoRec, Organy):
 
     def __init__(self, *args, **kwargs):
-        super(StenoText, self).__init__(*args, **kwargs)
+        super(StenoTexty, self).__init__(*args, **kwargs)
 
-        self.paths['steno_text'] = f"{self.data_dir}/steno_text.pkl"
+        self.paths['steno_text'] = f"{self.data_dir}/steno_texty-{self.volebni_obdobi}.pkl"
 
         if self.stahni == True:
             # scraping z webu
@@ -50,10 +50,11 @@ class StenoText(StenoRec, Osoby):
 
         self.steno_texty, self._steno_texty = self.nacti_steno_texty()
 
-        # Doplneni recnika, který mluvil na konci minulého stenozáznamu, a tudíž není v aktuálním stenozáznamu identifikovatelný.
-        # Přetahující řečník je zpravidla zmíněn v některém z minulých stenozáznamů (turns).
-        # Tento stenozáznam je nutné vyhledat a uložit jeho číslo (id_turn_surrogate) a číslo řečníka (id_rec_surrogate).
-        # V joinu se steno_rec se pak použije id_rec_surrogate místo id_rec a id_turn_surrogate místo id_turn.
+        # Doplneni recnika, který mluvil na konci minulého stenozáznamu (přetahujícího řečníka).
+        # Přetahující řečník nemá v aktuálním stenozáznamu identifikátoir, ale zpravidla (v 99% případů) byl zmíněn v některém z minulých stenozáznamů (turns).
+        # Tento stenozáznam je nutné vyhledat a uložit jeho číslo ('id_turn_surrogate') a číslo řečníka ('id_rec_surrogate').
+        # V joinu se 'steno_rec' se pak použije 'id_rec_surrogate' místo 'id_rec' a 'id_turn_surrogate' místo 'id_turn' pro získání informací o osobě etc.
+        # Pozor: naopak informace o času proslovu jsou navázány na 'turn'.
         self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'turn_surrogate'] = np.nan
         self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'turn_surrogate'] = self.steno_texty.turn
         self.steno_texty['turn_surrogate'] = self.steno_texty.groupby("schuze")['turn_surrogate'].ffill().astype('Int64')
@@ -73,12 +74,20 @@ class StenoText(StenoRec, Osoby):
         suffix = "__steno_rec"
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno_rec, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
         self.steno_texty = self.steno_texty.drop(labels=['turn__steno_rec'], axis=1) # this inconsistency comes from the 'turn-fix'
-        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
+        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'steno_rec')
 
         # Merge osoby
         suffix = "__osoby"
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1)
+        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
+
+        ## Merge osoby
+        #suffix = "__poslanec"
+        #self.steno_texty = pd.merge(left=self.steno_texty, right=self.poslanec, on='id_osoba', suffixes = ("", suffix), how='left')
+        #self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'poslanec')
+
+        to_drop = ['zmena', 'id_org']
+        self.steno_texty.drop(labels=to_drop, inplace=True, axis=1)
 
         self.df = self.steno_texty
 
@@ -179,7 +188,6 @@ class StenoText(StenoRec, Osoby):
         Parallel(n_jobs=n_jobs, verbose=1, backend="threading")(delayed(self.stahni_url)(item) for item in args)
 
     def stahni_url(self, arg):
-        #print('.', end='')
         url, dir_prefix = arg
         u = urlparse(url)
         n = u.netloc
@@ -377,7 +385,6 @@ class StenoText(StenoRec, Osoby):
         return "%d-%02d-%02d" % (year, mo, day)
 
     def zpracuj_stenozaznam(self, filename):
-        #print('*', end='')
         if not os.path.exists(filename):
             log.error(f"Soubor {filename} neexistuje, přeskakuji.")
             return None

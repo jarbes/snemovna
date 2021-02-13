@@ -57,7 +57,7 @@ class TypOrganu(Snemovna):
 
 class Organy(TypOrganu):
     def __init__(self,  *args, **kwargs):
-        print("--> Organy")
+        log.debug("--> Organy")
         super(Organy, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
@@ -77,11 +77,15 @@ class Organy(TypOrganu):
         # Připoj Typu orgánu
         suffix = "__typ_organu"
         self.organy = pd.merge(left=self.organy, right=self.typ_organu, left_on="id_typ_organu", right_on="id_typ_org", suffixes=("",suffix), how='left')
-        self.organy = drop_by_inconsistency(self.organy, suffix, 0.1)
+        self.organy = drop_by_inconsistency(self.organy, suffix, 0.1, 'organy', 'typ_organu')
 
         self.df = self.organy
 
-        print("<-- Organy")
+        if self.volebni_obdobi == None:
+            self.volebni_obdobi = self.posledni_poslanecka_snemovna().od_organ.year
+            log.info(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
+
+        log.debug("<-- Organy")
 
     def nacti_organy(self):
         header = {
@@ -113,9 +117,15 @@ class Organy(TypOrganu):
 
         return df, _df
 
+    def posledni_poslanecka_snemovna(self):
+        p =  self.df[(self.df.nazev_organu_cz == 'Poslanecká sněmovna') & (self.df.do_organ.isna())].sort_values(by=["od_organ"])
+        assert len(p) == 1
+        return p.iloc[-1]
+
+
 class TypFunkce(TypOrganu):
     def __init__(self, *args, **kwargs):
-        print("--> TypFunkce")
+        log.debug("--> TypFunkce")
         super(TypFunkce, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
@@ -130,18 +140,14 @@ class TypFunkce(TypOrganu):
         semanticka_maska = {1: "předseda", 2: "místopředseda", 3: "ověřovatel"}
         self.typ_funkce['typ_funkce_obecny_CAT'] = mask_by_values(self.typ_funkce.typ_funkce_obecny, semanticka_maska)
 
-        #print(f"Odstraňuji sloupce: {set(self.typ_funkce.columns).intersection(self.typ_organu.columns)}")
-        #labels = ["priorita"]
-        #self.typ_funkce.drop(labels=labels, inplace=True, axis=1)
         # Připoj Typu orgánu
         suffix="__typ_organu"
         self.typ_funkce = pd.merge(left=self.typ_funkce, right=self.typ_organu, on="id_typ_org", suffixes=("", suffix), how='left')
-        self.typ_funkce = drop_by_inconsistency(self.typ_funkce, suffix, 0.1)
-
-        #self.typ_funkce.drop(labels=labels, inplace=True, axis=1)
+        self.typ_funkce = drop_by_inconsistency(self.typ_funkce, suffix, 0.1, 'typ_funkce', 'typ_organu')
 
         self.df = self.typ_funkce
-        print("<-- TypFunkce")
+
+        log.debug("<-- TypFunkce")
 
     def nacti_typ_funkce(self):
         header = {
@@ -170,9 +176,11 @@ class TypFunkce(TypOrganu):
 
         return df, _df
 
+
 class Funkce(Organy, TypFunkce):
+
     def __init__(self, *args, **kwargs):
-        print("--> Funkce")
+        log.debug("--> Funkce")
         super(Funkce, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
@@ -189,16 +197,16 @@ class Funkce(Organy, TypFunkce):
         # Připoj Orgány
         suffix = "__organy"
         self.funkce = pd.merge(left=self.funkce, right=self.organy, on='id_organ', suffixes=("", suffix), how='left')
-        self.funkce =  drop_by_inconsistency(self.funkce, suffix, 0.1)
+        self.funkce =  drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'organy')
 
         # Připoj Typ funkce
         suffix = "__typ_funkce"
         self.funkce = pd.merge(left=self.funkce, right=self.typ_funkce, on="id_typ_funkce", suffixes=("", suffix), how='left')
-        self.funkce = drop_by_inconsistency(self.funkce, suffix, 0.1)
+        self.funkce = drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'typ_funkce')
 
         self.df = self.funkce
 
-        print("<-- Funkce")
+        log.debug("<-- Funkce")
 
     def nacti_funkce(self):
         header = {
@@ -219,9 +227,11 @@ class Funkce(Organy, TypFunkce):
 
         return df, _df
 
+
 class Osoby(Snemovna):
+
     def __init__(self, *args, **kwargs):
-        print("--> Osoby")
+        log.debug("--> Osoby")
         super(Osoby, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
@@ -243,7 +253,7 @@ class Osoby(Snemovna):
 
         self.df = self.osoby
 
-        print("<-- Osoby")
+        log.debug("<-- Osoby")
 
     def nacti_osoby(self):
         # Obsahuje jména osob, které jsou zařazeni v orgánech.
@@ -287,10 +297,70 @@ class Osoby(Snemovna):
 
         return df, _df
 
+
+class OsobyZarazeni(Funkce, Organy, Osoby):
+    def __init__(self, *args, **kwargs):
+        log.debug("--> OsobyZarazeni")
+        super(OsobyZarazeni, self).__init__(*args, **kwargs)
+
+        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+
+        self.paths['osoby_zarazeni'] = f"{self.data_dir}/zarazeni.unl"
+
+        self.osoby_zarazeni, self.osoby_zarazeni = self.nacti_osoby_zarazeni()
+        print(len(self.osoby_zarazeni))
+        print(self.osoby_zarazeni.tail())
+
+        # Připoj Osoby
+        suffix = "__osoby"
+        self.osoby_zarazeni = pd.merge(left=self.osoby_zarazeni, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
+        self.osoby_zarazeni = drop_by_inconsistency(self.osoby_zarazeni, suffix, 0.1, 'osoby_zarazeni', 'osoby')
+
+        # Připoj Orgány
+        suffix = "__organy"
+        sub1 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 0]
+        m1 = pd.merge(left=sub1, right=self.organy, left_on='id_of', right_on='id_organ', suffixes=("", suffix), how='left')
+        m1 = drop_by_inconsistency(m1, suffix, 0.1, 'osoby_zarazeni', 'organy')
+        # Připoj Funkce
+        sub2 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 1]
+        m2 = pd.merge(left=sub2, right=self.funkce, left_on='id_of', right_on='id_funkce', suffixes=("", suffix), how='left')
+        m2 = drop_by_inconsistency(m2, suffix, 0.1, 'osoby_zarazeni', 'funkce')
+        m = pd.concat([m1, m2], axis=0, ignore_index=True)
+        self.osoby_zarazeni = m.reindex(sub1.index | sub2.index)
+
+        self.df = self.osoby_zarazeni
+        log.debug("<-- OsobyZarazeni")
+
+    def nacti_osoby_zarazeni(self):
+        header = {
+            'id_osoba': 'Int64', # Identifikátor osoby, viz osoba:id_osoba
+            'id_of':  'Int64', # Identifikátor orgánu či funkce: pokud je zároveň nastaveno zarazeni:cl_funkce == 0, pak id_o odpovídá organy:id_organ, pokud cl_funkce == 1, pak odpovídá funkce:id_funkce.
+            'cl_funkce': 'Int64', # Status členství nebo funce: pokud je rovno 0, pak jde o členství, pokud 1, pak jde o funkci.
+            'od_o': 'string', # datetime(year to hour) Zařazení od
+            'do_o':  'string', #datetime(year to hour)  Zařazení do
+            'od_f': 'string', # date  Mandát od. Nemusí být vyplněno a pokud je vyplněno, pak určuje datum vzniku mandátu a zarazeni:od_o obsahuje datum volby.
+            'do_f': 'string'# date  Mandát do. Nemusí být vyplněno a pokud je vyplněno, určuje datum konce mandátu a zarazeni:do_o obsahuje datum ukončení zařazení.
+        }
+
+        _df = pd.read_csv(self.paths['osoby_zarazeni'], sep="|", names = header.keys(), index_col=False, encoding='cp1250')
+        df = self.pretipuj(_df, header, 'osoby_zarazeni')
+
+        df['cl_funkce_CAT'] = df.cl_funkce.astype('string').mask(df.cl_funkce == 0, 'členství').mask(df.cl_funkce == 1, 'funkce')
+
+        df['od_o_DT'] = format_to_datetime_and_report_skips(df, 'od_o', '%Y-%m-%d %H').dt.tz_localize(self.tzn)
+        # Fix known errors
+        #df['do_o'] = df.do_o.mask(df.do_o == '0205-06-09 00',  '2005-06-09 00')
+        df['do_o_DT'] = format_to_datetime_and_report_skips(df, 'do_o', '%Y-%m-%d %H').dt.tz_localize(self.tzn)
+        df['od_f_DT'] = format_to_datetime_and_report_skips(df, 'od_f', '%d.%m.%Y').dt.tz_localize(self.tzn)
+        df['do_f_DT'] = format_to_datetime_and_report_skips(df, 'do_f', '%d.%m.%Y').dt.tz_localize(self.tzn)
+
+        return df, _df
+
+
 class Poslanec(Osoby, Organy):
 
     def __init__(self, *args, **kwargs):
-        print("--> Poslanec")
+        log.debug("--> Poslanec")
         super(Poslanec, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
@@ -315,12 +385,12 @@ class Poslanec(Osoby, Organy):
         # Připoj informace o osobe
         suffix = "__osoby"
         self.poslanec = pd.merge(left=self.poslanec, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.poslanec = drop_by_inconsistency(self.poslanec, suffix, 0.1)
+        self.poslanec = drop_by_inconsistency(self.poslanec, suffix, 0.1, 'poslanec', 'osoby')
 
         # Připoj informace o kanceláři
         suffix = "__pkgps"
         self.poslanec = pd.merge(left=self.poslanec, right=self.pkgps, on='id_poslanec', suffixes = ("", suffix), how='left')
-        self.poslanec = drop_by_inconsistency(self.poslanec, suffix, 0.1)
+        self.poslanec = drop_by_inconsistency(self.poslanec, suffix, 0.1, 'poslanec', 'pkgps')
 
         # Zúžení na volební období
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
@@ -328,7 +398,7 @@ class Poslanec(Osoby, Organy):
 
         self.df = self.poslanec
 
-        print("<-- Poslanec")
+        log.debug("<-- Poslanec")
 
     def nacti_poslance(self):
         header = {

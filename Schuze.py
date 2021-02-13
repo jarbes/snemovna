@@ -14,12 +14,15 @@ from setup_logger import log
 class SchuzeObecne(Snemovna):
     def __init__(self, *args, **kwargs):
         super(SchuzeObecne, self).__init__(*args, **kwargs)
+        log.debug('--> SchuzeObecne')
 
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/schuze.zip")
+        log.debug('<-- SchuzeObecne')
 
 
 class Schuze(SchuzeObecne, Organy):
     def __init__(self, *args, **kwargs):
+        log.debug('--> Schuze')
         super(Schuze, self).__init__(*args, **kwargs)
 
         self.paths['schuze'] = f"{self.data_dir}/schuze.unl"
@@ -32,13 +35,13 @@ class Schuze(SchuzeObecne, Organy):
         # Připoj informace o stavu schůze
         suffix = "__schuze_stav"
         self.schuze = pd.merge(left=self.schuze, right=self.schuze_stav, on='id_schuze', suffixes = ("", suffix), how='left')
-        self.schuze = drop_by_inconsistency(self.schuze, suffix, 0.1)
+        self.schuze = drop_by_inconsistency(self.schuze, suffix, 0.1, 'schuze', 'schuze_stav')
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        print('id_organu_dle_volebniho_obdobi', id_organu_dle_volebniho_obdobi)
         self.schuze = self.schuze[self.schuze.id_org == id_organu_dle_volebniho_obdobi]
 
         self.df = self.schuze
+        log.debug('<-- Schuze')
 
     def nacti_schuze(self):
         # Obsahuje záznamy o schůzích.
@@ -105,17 +108,21 @@ class Schuze(SchuzeObecne, Organy):
 
         return df, _df
 
+
 # Tabulka bod_stav
 # Obsahuje typy stavů bodu pořadu schůze.
 class BodStav(SchuzeObecne):
+
     def __init__(self, *args, **kwargs):
         super(BodStav, self).__init__(*args, **kwargs)
+        log.debug('--> BodStav')
 
         self.paths['bod_stav'] = f"{self.data_dir}/bod_stav.unl"
         self.stahni_data()
         self.bod_stav, self._bod_stav = self.nacti_bod_stav()
 
         self.df = self.bod_stav
+        log.debug('<-- BodStav')
 
     def nacti_bod_stav(self):
         header = {
@@ -137,6 +144,7 @@ class BodStav(SchuzeObecne):
 class BodSchuze(BodStav):
     def __init__(self, *args, **kwargs):
         super(BodSchuze, self).__init__(*args, **kwargs)
+        log.debug('--> BodSchuze')
 
         self.paths['bod_schuze'] = f"{self.data_dir}/bod_schuze.unl"
         self.stahni_data()
@@ -145,9 +153,10 @@ class BodSchuze(BodStav):
         # Připoj informace o stavu bodu
         suffix = "__bod_stav"
         self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, on='id_bod_stav', suffixes = ("", suffix), how='left')
-        self.bod_schuze = drop_by_inconsistency(self.bod_schuze, suffix, 0.1)
+        self.bod_schuze = drop_by_inconsistency(self.bod_schuze, suffix, 0.1, 'bod_schuze', 'bod_stav')
 
         self.df = self.bod_schuze
+        log.debug('<-- BodSchuze')
 
     def nacti_bod_schuze(self):
         header = {
