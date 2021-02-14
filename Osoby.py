@@ -307,26 +307,25 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
 
         self.paths['osoby_zarazeni'] = f"{self.data_dir}/zarazeni.unl"
 
-        self.osoby_zarazeni, self.osoby_zarazeni = self.nacti_osoby_zarazeni()
-        print(len(self.osoby_zarazeni))
-        print(self.osoby_zarazeni.tail())
+        self.osoby_zarazeni, self._osoby_zarazeni = self.nacti_osoby_zarazeni()
 
         # Připoj Osoby
         suffix = "__osoby"
         self.osoby_zarazeni = pd.merge(left=self.osoby_zarazeni, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
         self.osoby_zarazeni = drop_by_inconsistency(self.osoby_zarazeni, suffix, 0.1, 'osoby_zarazeni', 'osoby')
 
-        # Připoj Orgány
+        # Připoj orgány
         suffix = "__organy"
-        sub1 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 0]
+        sub1 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 0].reset_index()
         m1 = pd.merge(left=sub1, right=self.organy, left_on='id_of', right_on='id_organ', suffixes=("", suffix), how='left')
         m1 = drop_by_inconsistency(m1, suffix, 0.1, 'osoby_zarazeni', 'organy')
+
         # Připoj Funkce
-        sub2 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 1]
+        sub2 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 1].reset_index()
         m2 = pd.merge(left=sub2, right=self.funkce, left_on='id_of', right_on='id_funkce', suffixes=("", suffix), how='left')
         m2 = drop_by_inconsistency(m2, suffix, 0.1, 'osoby_zarazeni', 'funkce')
-        m = pd.concat([m1, m2], axis=0, ignore_index=True)
-        self.osoby_zarazeni = m.reindex(sub1.index | sub2.index)
+
+        self.osoby_zarazeni = pd.concat([m1, m2], axis=0, ignore_index=True).set_index('index').sort_index()
 
         self.df = self.osoby_zarazeni
         log.debug("<-- OsobyZarazeni")

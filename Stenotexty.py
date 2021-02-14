@@ -31,7 +31,7 @@ Cas = namedtuple('Cas', ['typ', 'hodina', 'minuta'])
 # Pozor: Texty nejsou součástí oficiálních dat PS!
 # Texty se stahují a scrapují z internetových stránek PS, viz např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
-class StenoTexty(StenoRec, Organy):
+class StenoTexty(StenoRec, OsobyZarazeni):
 
     def __init__(self, *args, **kwargs):
         super(StenoTexty, self).__init__(*args, **kwargs)
@@ -81,10 +81,10 @@ class StenoTexty(StenoRec, Organy):
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
         self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
 
-        ## Merge osoby
-        #suffix = "__poslanec"
-        #self.steno_texty = pd.merge(left=self.steno_texty, right=self.poslanec, on='id_osoba', suffixes = ("", suffix), how='left')
-        #self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'poslanec')
+        ## Merge osoby_zarazeni
+        poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o_DT.isna()) & (self.osoby_zarazeni.id_organ==172) & (self.osoby_zarazeni.cl_funkce_CAT=='členství')] # všichni poslanci
+        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.do_o_DT.isna()) & (self.osoby_zarazeni.cl_funkce_CAT=='členství')]
+        self.steno_texty = pd.merge(self.steno_texty, strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
 
         to_drop = ['zmena', 'id_org']
         self.steno_texty.drop(labels=to_drop, inplace=True, axis=1)
