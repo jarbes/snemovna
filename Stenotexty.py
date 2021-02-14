@@ -86,6 +86,24 @@ class StenoTexty(StenoRec, OsobyZarazeni):
         strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.do_o_DT.isna()) & (self.osoby_zarazeni.cl_funkce_CAT=='členství')]
         self.steno_texty = pd.merge(self.steno_texty, strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
 
+        ## Merge Strana
+        snemovna_id = self.organy[self.organy.nazev_organu_cz=="Poslanecká sněmovna"].sort_values(by="od_organ").iloc[-1].id_organ
+        snemovna_od = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].od_organ).tz_localize("Europe/Prague")
+        snemovna_do = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].do_organ).tz_localize("Europe/Prague")
+
+        snemovna_cond = (self.osoby_zarazeni.od_o_DT >= snemovna_od) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.cl_funkce_CAT=='členství')
+        if pd.isnull(snemovna_do) == False:
+            snemovna_cond = snemovna_cond | (self.osoby_zarazeni.do_o_DT >= snemovna_do)
+        s = self.osoby_zarazeni[snemovna_cond].groupby('id_osoba').size().sort_values()
+        prebehlici = s[s > 1]
+        print("prebehlici: ", prebehlici)
+        
+        for id_prebehlika in prebehlici.index:
+            for idx, row in self.osoby_zarazeni[ snemovna_cond & (self.osoby_zarazeni.id_osoba == id_prebehlika)].iterrows():
+                od, do, id_organ, zkratka =  row['od_o_DT'], row['do_o_DT'], row['id_organ'], row['zkratka']
+                print(id_prebehlika, od, do, id_organ, zkratka)
+                self.steno_texty.zkratka.mask((self.steno_texty.date >= od) & (self.steno_texty.date <= do) & (self.steno_texty.id_osoba == id_prebehlika), zkratka, inplace=True)
+
         to_drop = ['zmena', 'id_org']
         self.steno_texty.drop(labels=to_drop, inplace=True, axis=1)
 
