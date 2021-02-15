@@ -1,0 +1,6 @@
+*.swp
+*.pyc
+tools/
+data/
+tests/data/
+.ipynb_checkpoints/
