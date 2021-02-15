@@ -1,22 +1,28 @@
 
+# Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1302
+
 import pytz
 
 import pandas as pd
 
-from utility import *
+from snemovna.utility import *
 
-from Snemovna import *
-from Osoby import *
+from snemovna.Snemovna import Snemovna
+from snemovna.PoslanciOsoby import Osoby, Organy, Poslanci
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 
-# Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1302
 class HlasovaniObecne(Snemovna):
+
     def __init__(self, *args, **kwargs):
+        log.debug("--> HlasovaniObecne")
         super(HlasovaniObecne, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/hl-{self.volebni_obdobi}ps.zip")
+
+        self.stahni_data()
+        log.debug("<-- HlasovaniObecne")
 
 
 class Hlasovani(HlasovaniObecne, Organy):
@@ -35,7 +41,7 @@ class Hlasovani(HlasovaniObecne, Organy):
         # Vazba mezi stenozázamem a hlasováním, tj. ve kterém stenozáznamu proběhlo hlasování
         self.paths['stenozaznam'] = f"{self.data_dir}/hl{self.volebni_obdobi}v.unl"
 
-        self.stahni_data()
+        #self.stahni_data()
 
         # Načti datové tabulky a připrav odvozené dataové tabulky
         self.hlasovani, self._hlasovani = self.nacti_hlasovani()
@@ -214,7 +220,7 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
         return df, _df
 
 
-class Omluvy(HlasovaniObecne, Poslanec, Organy):
+class Omluvy(HlasovaniObecne, Poslanci, Organy):
     def __init__(self, *args, **kwargs):
         super(Omluvy, self).__init__(*args, **kwargs)
 
@@ -224,9 +230,9 @@ class Omluvy(HlasovaniObecne, Poslanec, Organy):
         self.omluvy, self._omluvy = self.nacti_omluvy()
 
         # Připoj informace o poslanci
-        suffix = "__poslanec"
-        self.omluvy = pd.merge(left=self.omluvy, right=self.poslanec, on='id_poslanec', suffixes = ("", suffix), how='left')
-        self.omluvy = drop_by_inconsistency(self.omluvy, suffix, 0.1, 'omluvy', 'poslanec')
+        suffix = "__poslanci"
+        self.omluvy = pd.merge(left=self.omluvy, right=self.poslanci, on='id_poslanec', suffixes = ("", suffix), how='left')
+        self.omluvy = drop_by_inconsistency(self.omluvy, suffix, 0.1, 'omluvy', 'poslanci')
 
         # Připoj Orgány
         suffix = "__organy"

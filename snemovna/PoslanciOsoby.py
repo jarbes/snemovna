@@ -1,27 +1,38 @@
 
+# Agenda eviduje osoby, jejich zařazení do orgánů a jejich funkce v orgánech a orgány jako takové.
+# Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
+
 from os import path
 import pandas as pd
 
-from utility import *
+from snemovna.utility import *
 
-from Snemovna import *
+from snemovna.Snemovna import Snemovna
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 
-class TypOrganu(Snemovna):
+class PoslanciOsobyObecne(Snemovna):
+
+    def __init__(self, *args, **kwargs):
+        log.debug("--> PoslanciOsobyObecne")
+        super(PoslanciOsobyObecne, self).__init__(*args, **kwargs)
+        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+
+        self.stahni_data()
+        log.debug("<-- PoslanciOsobyObecne")
+
+
+class TypOrganu(PoslanciOsobyObecne):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> TypOrganu")
         super(TypOrganu, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
-
-        # Organy - cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
         self.paths['typ_organu'] = f"{self.data_dir}/typ_organu.unl"
 
-        self.stahni_data()
+        #self.stahni_data()
 
         self.typ_organu, self._typ_organu = self.nacti_typ_organu()
 
@@ -60,7 +71,7 @@ class Organy(TypOrganu):
         log.debug("--> Organy")
         super(Organy, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+        #self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         #Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
@@ -70,13 +81,15 @@ class Organy(TypOrganu):
         # přičemž pouze v některých případech se tyto vazby využívají.
         self.paths['organy'] = f"{self.data_dir}/organy.unl"
 
-        self.stahni_data()
+        #self.stahni_data()
 
         self.organy, self._organy = self.nacti_organy()
 
         # Připoj Typu orgánu
         suffix = "__typ_organu"
         self.organy = pd.merge(left=self.organy, right=self.typ_organu, left_on="id_typ_organu", right_on="id_typ_org", suffixes=("",suffix), how='left')
+        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou
+        self.organy.drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
         self.organy = drop_by_inconsistency(self.organy, suffix, 0.1, 'organy', 'typ_organu')
 
         self.df = self.organy
@@ -128,12 +141,12 @@ class TypFunkce(TypOrganu):
         log.debug("--> TypFunkce")
         super(TypFunkce, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+        #self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Organy - cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
         self.paths['typ_funkce'] = f"{self.data_dir}/typ_funkce.unl"
-        self.stahni_data()
+        #self.stahni_data()
 
         self.typ_funkce, self._typ_funkce = self.nacti_typ_funkce()
 
@@ -183,14 +196,14 @@ class Funkce(Organy, TypFunkce):
         log.debug("--> Funkce")
         super(Funkce, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+        #self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         #Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
         # slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
         self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
 
-        self.stahni_data()
+        #self.stahni_data()
 
         self.funkce, self._funkce = self.nacti_funkce()
 
@@ -228,13 +241,13 @@ class Funkce(Organy, TypFunkce):
         return df, _df
 
 
-class Osoby(Snemovna):
+class Osoby(PoslanciOsobyObecne):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Osoby")
         super(Osoby, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+        #self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Jména osob, které jsou zařazeni v orgánech.
@@ -246,7 +259,7 @@ class Osoby(Snemovna):
         # Obsahuje vazby na externí systémy. Je-li typ = 1, pak jde o vazbu na evidenci senátorů na senat.cz
         self.paths['osoba_extra'] = f"{self.data_dir}/osoba_extra.unl"
 
-        self.stahni_data()
+        #self.stahni_data()
 
         self.osoby, self._osoby = self.nacti_osoby()
         self.osoba_extra, self.osoba_extra = self.nacti_osoba_extra()
@@ -303,7 +316,7 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
         log.debug("--> OsobyZarazeni")
         super(OsobyZarazeni, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+        #self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
         self.paths['osoby_zarazeni'] = f"{self.data_dir}/zarazeni.unl"
 
@@ -356,24 +369,21 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
         return df, _df
 
 
-class Poslanec(Osoby, Organy):
+class Poslanci(Osoby, Organy):
 
     def __init__(self, *args, **kwargs):
-        log.debug("--> Poslanec")
-        super(Poslanec, self).__init__(*args, **kwargs)
+        log.debug("--> Poslanci")
+        super(Poslanci, self).__init__(*args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
-
-        # Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
         # Další informace o poslanci vzhledem k volebnímu období: kontaktní údaje, adresa regionální kanceláře a podobně.
         # Některé údaje jsou pouze v aktuálním volebním období.
-        self.paths['poslanec'] = f"{self.data_dir}/poslanec.unl"
+        self.paths['poslanci'] = f"{self.data_dir}/poslanec.unl"
         # Obsahuje GPS souřadnice regionálních kanceláří poslanců.
         self.paths['pkgps'] = f"{self.data_dir}/pkgps.unl"
 
-        self.stahni_data()
+        #self.stahni_data()
 
-        self.poslanec, self._poslanec = self.nacti_poslance()
+        self.poslanci, self._poslanci = self.nacti_poslance()
         self.pkgps, self._pkgps = self.nacti_pkgps()
 
         #self.poslanec = pd.merge(self.poslanec, self.osoby,  on='id_osoba')
@@ -383,21 +393,21 @@ class Poslanec(Osoby, Organy):
         #poslanci_df = poslanci_df[poslanci_df.id_obdobi == posledni_volebni_obdobi]
         # Připoj informace o osobe
         suffix = "__osoby"
-        self.poslanec = pd.merge(left=self.poslanec, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.poslanec = drop_by_inconsistency(self.poslanec, suffix, 0.1, 'poslanec', 'osoby')
+        self.poslanci = pd.merge(left=self.poslanci, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
+        self.poslanci = drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'osoby')
 
         # Připoj informace o kanceláři
         suffix = "__pkgps"
-        self.poslanec = pd.merge(left=self.poslanec, right=self.pkgps, on='id_poslanec', suffixes = ("", suffix), how='left')
-        self.poslanec = drop_by_inconsistency(self.poslanec, suffix, 0.1, 'poslanec', 'pkgps')
+        self.poslanci = pd.merge(left=self.poslanci, right=self.pkgps, on='id_poslanec', suffixes = ("", suffix), how='left')
+        self.poslanci = drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'pkgps')
 
         # Zúžení na volební období
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.poslanec = self.poslanec[self.poslanec.id_obdobi == id_organu_dle_volebniho_obdobi]
+        self.poslanci = self.poslanci[self.poslanci.id_obdobi == id_organu_dle_volebniho_obdobi]
 
-        self.df = self.poslanec
+        self.df = self.poslanci
 
-        log.debug("<-- Poslanec")
+        log.debug("<-- Poslanci")
 
     def nacti_poslance(self):
         header = {
@@ -418,8 +428,8 @@ class Poslanec(Osoby, Organy):
             "foto":  'Int64'
         }
 
-        _df = pd.read_csv(self.paths['poslanec'], sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'poslanec')
+        _df = pd.read_csv(self.paths['poslanci'], sep="|", names = header.keys(), index_col=False, encoding='cp1250')
+        df = self.pretipuj(_df, header, 'poslanci')
 
         return df, _df
 

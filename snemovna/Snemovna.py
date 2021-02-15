@@ -6,9 +6,9 @@ import pytz
 
 import pandas as pd
 
-from utility import *
+from snemovna.utility import *
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 
 # TODO: Explicitly define variables in the header of each class
@@ -16,7 +16,7 @@ from setup_logger import log
 
 class Snemovna(object):
 
-    def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=False, *args, **kwargs):
+    def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=True, *args, **kwargs):
         log.debug("--> Snemovna")
 
         super().__init__(*args, **kwargs)

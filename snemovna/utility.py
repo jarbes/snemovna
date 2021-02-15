@@ -1,4 +1,3 @@
-# TODO: apply logger
 
 import requests
 from pathlib import Path
@@ -13,13 +12,14 @@ import pandas as pd
 
 import plotly.graph_objects as go
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 #######################################################################
 # Stahování dat
 
 def download_and_unzip(url, zip_file_name, data_dir):
-    log.debug(f"\nVytvářím adresář: '{data_dir}'")
+    log.info(f"Stahuji '{url}'.")
+    log.debug(f"Vytvářím adresář: '{data_dir}'")
     Path(data_dir).mkdir(parents=True, exist_ok=True)
 
     log.debug(f"Stahuji data z: '{url}'")
