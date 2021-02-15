@@ -1,12 +1,14 @@
 import unittest
 
-from Hlasovani import *
+import pandas as pd
+
+from Hlasovani import Hlasovani
 
 class TestHlasovani(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # print('setupClass')
+        print('setUpClass')
         cls.hlasovani = Hlasovani(volebni_obdobi=2017, data_dir="./data", stahni=False)
         pass
 
@@ -16,18 +18,20 @@ class TestHlasovani(unittest.TestCase):
         pass
 
     def setUp(self):
-        print('setUp')
+        # print('setUp')
+        pass
 
     def tearDown(self):
         # print('tearDown')
         pass
 
     def test_nacti_hlasovani(self):
-        print(self.hlasovani.df.head())
-        #self.assertEqual(self.df.fit(), self.train_accuracy) 
-        #self.assertEqual(self.ta.train_confusion_matrix.tolist(), self.train_confusion_matrix.tolist())  
+        ret = self.hlasovani.nacti_hlasovani()
+        self.assertIsInstance(ret, tuple)
+        self.assertEqual(len(ret), 2)
+        self.assertIsInstance(ret[0], pd.core.frame.DataFrame)
+        self.assertIsInstance(ret[1], pd.core.frame.DataFrame)
 
 if __name__ == '__main__':
-    #run tests
     unittest.main()
 
