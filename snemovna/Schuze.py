@@ -1,12 +1,12 @@
 
 import pandas as pd
 
-from utility import *
+from snemovna.utility import *
 
-from Snemovna import *
-from Osoby import *
+from snemovna.Snemovna import *
+from snemovna.PoslanciOsoby import *
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 # Agenda Schůze obsahuje data schůzí Poslanecké sněmovny: schůze, body pořadu schůze a související data.
 # Informace k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1308
@@ -69,30 +69,27 @@ class Schuze(SchuzeObecne, Organy):
 
         # Přidej sloupec 'od_schuze' typu datetime
         df['od_schuze'] = pd.to_datetime(df['od_schuze'], format='%Y-%m-%d %H:%M')
-        df['od_schuze'] = df['od_schuze_DT'].dt.tz_localize(self.tzn)
+        df['od_schuze'] = df['od_schuze'].dt.tz_localize(self.tzn)
 
 
         # Přidej sloupec 'do_schuze' typu datetime
         df['do_schuze'] = pd.to_datetime(df['do_schuze'], format='%Y-%m-%d %H:%M')
-        df['do_schuze'] = df['do_schuze_DT'].dt.tz_localize(self.tzn)
+        df['do_schuze'] = df['do_schuze'].dt.tz_localize(self.tzn)
 
         mask = {None: 'schválený pořad', 1: 'navržený pořad'}
+        df['pozvanka'] = mask_by_values(df.pozvanka__ORIG, mask)
+        self.meta['pozvanka'] = dict(popis='Druh záznamu.', tabulka='schuze', vlastni=True)
+
         return df, _df
 
     def nacti_schuze_stav(self):
         header = {
-            # Identifikátor schůze, viz schuze:id_schuze.
-            'id_schuze': 'Int64',
-            # Stav schůze: 1 - OK, 2 - pořad schůze nebyl schválen a schůze byla ukončena.
-            'stav': 'Int64',
-            # Typ schůze: 1 - řádná, 2 - mimořádná (navržená skupinou poslanců). Dle jednacího řádu nelze měnit navržený pořad mimořádné schůze.
-            'typ': 'Int64',
-            # Zvláštní určení začátku schůze: pokud je vyplněno, použije se namísto schuze:od_schuze.
-            'text_dt': 'string',
-            # Text stavu schůze, obvykle informace o přerušení.
-            'text_st': 'string',
-            # Podobné jako schuze_stav:text_st, pouze psáno na začátku s velkým písmenem a ukončeno tečkou.
-            'tm_line': 'string'
+            'id_schuze': MItem('Int64', 'Identifikátor schůze, viz Schuze:id_schuze.'),
+            'stav__ORIG': MItem('Int64', 'Stav schůze: 1 - OK, 2 - pořad schůze nebyl schválen a schůze byla ukončena.'),
+            'typ__ORIG': MItem('Int64', 'Typ schůze: 1 - řádná, 2 - mimořádná (navržená skupinou poslanců). Dle jednacího řádu nelze měnit navržený pořad mimořádné schůze.'),
+            'text_dt': MItem('string', 'Zvláštní určení začátku schůze: pokud je vyplněno, použije se namísto Schuze:od_schuze.'),
+            'text_st': MItem('string', 'Text stavu schůze, obvykle informace o přerušení.'),
+            'tm_line': MItem('string', 'Podobné jako SchuzeStav:text_st, pouze psáno na začátku s velkým písmenem a ukončeno tečkou.')
         }
 
         _df = pd.read_csv(self.paths['schuze_stav'], sep="|", names = header,  index_col=False, encoding='cp1250')
@@ -101,9 +98,11 @@ class Schuze(SchuzeObecne, Organy):
 
         assert df.id_schuze.size == df.id_schuze.nunique(), "Schůze může mít určen pouze jeden stav!"
 
-        df['stav_CAT'] = df.stav.astype(str).mask(df.stav == 1, "OK").mask(df.stav == 2, "pořad neschválen, schůze ukončena")
+        df['stav'] = df.stav__ORIG.astype(str).mask(df.stav__ORIG == 1, "OK").mask(df.stav__ORIG == 2, "pořad neschválen, schůze ukončena")
+        self.meta['stav'] = dict(popis='Stav schůze.', tabulka='schuze_stav', vlastni=True)
 
-        df['typ_CAT'] = df.typ.astype(str).mask(df.typ == 1, "řádná").mask(df.typ == 2, "mimořádná")
+        df['typ'] = df.typ__ORIG.astype(str).mask(df.typ__ORIG == 1, "řádná").mask(df.typ__ORIG == 2, "mimořádná")
+        self.meta['typ'] = dict(popis='Typ schůze.', tabulka='schuze_stav', vlastni=True)
 
         return df, _df
 
@@ -127,15 +126,16 @@ class BodStav(SchuzeObecne):
 
     def nacti_bod_stav(self):
         header = {
-            # Typ stavu bodu schůze: typ 3 - neprojednatelný znamená vyřazen z pořadu či neprojednatelný z důvodu legislativního procesu.
-            'id_bod_stav': 'Int64',
-            # Popis stavu bodu.
-            'popis': 'string'
+            'id_bod_stav__ORIG': MItem('Int64', 'Typ stavu bodu schůze: typ 3 - neprojednatelný znamená vyřazen z pořadu či neprojednatelný z důvodu legislativního procesu.'),
+            'popis': MItem('string', 'Popis stavu bodu.')
         }
 
         _df = pd.read_csv(self.paths['bod_stav'], sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'bod_stav')
         self.rozsir_meta(header, tabulka='bod_stav', vlastni=False)
+
+        df['id_bod_stav'] = df.id_bod_stav__ORIG.astype(str).mask(df.id_bod_stav__ORIG == 3, 'neprojednatelný')
+        self.meta['id_bod_stav'] = dict(popis='Typ stavu bodu schůze.', tabulka='bod_stav', vlastni=True)
 
         return df, _df
 
@@ -154,7 +154,7 @@ class BodSchuze(BodStav):
 
         # Připoj informace o stavu bodu
         suffix = "__bod_stav"
-        self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, on='id_bod_stav', suffixes = ("", suffix), how='left')
+        self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, left_on='id_bod_stav', right_on='id_bod_stav__ORIG', suffixes = ("", suffix), how='left')
         self.bod_schuze = self.drop_by_inconsistency(self.bod_schuze, suffix, 0.1, 'bod_schuze', 'bod_stav')
 
         self.df = self.bod_schuze
@@ -164,36 +164,21 @@ class BodSchuze(BodStav):
 
     def nacti_bod_schuze(self):
         header = {
-            # Identifikátor bodu pořadu schůze, není to primární klíč, je nutno používat i položku bod_schuze:pozvanka. Záznamy se stejným id_bod odkazují na stejný bod, i když číslo bodu může být rozdílné (během schvalování pořadu schůze se pořadí bodů může změnit).
-            'id_bod': 'Int64',
-             #Identifikátor schůze, viz schuze:id_schuze a též schuze:pozvanka.
-            'id_schuze': 'Int64',
-            # Identifikátor tisku, pokud se bod k němu vztahuje. V tomto případě lze využít bod_schuze:uplny_kon.
-            'id_tisk': 'Int64',
-            # Typ bodu, resp. typ projednávání. Kromě bod_schuze:id_typ == 6, se jedná o typ stavu, viz stavy:id_typ a tabulka níže. Je-li bod_schuze:id_typ == 6, jedná se o jednotlivou odpověď na písemnou interpelaci a tento záznam se obykle nezobrazuje (navíc má stejné id_bodu jako bod odpovědi na písemné interpelace a může mít různé číslo bodu).
-            'id_typ': 'Int64',
-            # Číslo bodu. Pokud je menší než jedna, pak se při výpisu číslo bodu nezobrazuje.
-            'bod': 'Int64',
-            # Úplný název bodu.
-            'uplny_naz': 'string',
-            # Koncovka názvu bodu s identifikací čísla tisku nebo čísla sněmovního dokumentu, pokud jsou používány, viz bod_schuze:id_tisk a bod_schuze:id_sd.
-            'uplny_kon': 'string',
-            # Poznámka k bodu - obvykle obsahuje informaci o pevném zařazení bodu.
-            'poznamka': 'string',
-            # Stav bodu pořadu, viz bod_stav:id_bod_stav. U bodů návrhu pořadu se nepoužije.
-            'id_bod_stav': 'Int64',
-            # Rozlišení záznamu, viz schuze:pozvanka
-            'pozvanka': 'Int64',
-            # Režim dle par. 90, odst. 2 jednacího řádu.
-            'rj':  'Int64',
-            # Poznámka k bodu, zkrácený zápis
-            'pozn2': 'string',
-            # Druh bodu: 0 nebo null: normální, 1: odpovědi na ústní interpelace, 2: odpovědi na písemné interpelace, 3: volební bod
-            'druh_bodu': 'Int64',
-            # Identifikátor sněmovního dokumentu, viz sd_dokument:id_dokument. Pokud není null, při výpisu se zobrazuje bod_schuze:uplny_kon.
-            'id_sd': 'Int64',
-            # Zkrácený název bodu, neoficiální.
-            'zkratka': 'string'
+            'id_bod': MItem('Int64', 'Identifikátor bodu pořadu schůze, není to primární klíč, je nutno používat i položku bod_schuze:pozvanka. Záznamy se stejným id_bod odkazují na stejný bod, i když číslo bodu může být rozdílné (během schvalování pořadu schůze se pořadí bodů může změnit).'),
+            'id_schuze': MItem('Int64', 'Identifikátor schůze, viz Schuze:id_schuze a též schuze:pozvanka.'),
+            'id_tisk': MItem('Int64', 'Identifikátor tisku, pokud se bod k němu vztahuje. V tomto případě lze využít bod_schuze:uplny_kon.'),
+            'id_typ': MItem('Int64', 'Typ bodu, resp. typ projednávání. Kromě bod_schuze:id_typ == 6, se jedná o typ stavu, viz stavy:id_typ a tabulka níže. Je-li bod_schuze:id_typ == 6, jedná se o jednotlivou odpověď na písemnou interpelaci a tento záznam se obykle nezobrazuje (navíc má stejné id_bodu jako bod odpovědi na písemné interpelace a může mít různé číslo bodu).'),
+            'bod': MItem('Int64', 'Číslo bodu. Pokud je menší než jedna, pak se při výpisu číslo bodu nezobrazuje.'),
+            'uplny_naz': MItem('string', 'Úplný název bodu.'),
+            'uplny_kon': MItem('string', 'Koncovka názvu bodu s identifikací čísla tisku nebo čísla sněmovního dokumentu, pokud jsou používány, viz BodSchuze:id_tisk a BodSchuze:id_sd.'),
+            'poznamka': MItem('string', 'Poznámka k bodu - obvykle obsahuje informaci o pevném zařazení bodu.'),
+            'id_bod_stav': MItem('Int64', 'Stav bodu pořadu, viz BodStav:id_bod_stav. U bodů návrhu pořadu se nepoužije.'),
+            'pozvanka': MItem('Int64', 'Rozlišení záznamu, viz Schuze:pozvanka'),
+            'rj':  MItem('Int64', 'Režim dle par. 90, odst. 2 jednacího řádu.'),
+            'pozn2': MItem('string', 'Poznámka k bodu, zkrácený zápis'),
+            'druh_bodu': MItem('Int64', 'Druh bodu: 0 nebo null: normální, 1: odpovědi na ústní interpelace, 2: odpovědi na písemné interpelace, 3: volební bod'),
+            'id_sd': MItem('Int64', 'Identifikátor sněmovního dokumentu, viz sd_dokument:id_dokument. Pokud není null, při výpisu se zobrazuje BodSchuze:uplny_kon.'),
+            'zkratka': MItem('string', 'Zkrácený název bodu, neoficiální.')
         }
 
         _df = pd.read_csv(self.paths['bod_schuze'], sep="|", names = header,  index_col=False, encoding='cp1250')
