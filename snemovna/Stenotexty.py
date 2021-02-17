@@ -74,12 +74,12 @@ class StenoTexty(StenoRec, OsobyZarazeni):
         suffix = "__steno_rec"
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno_rec, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
         self.steno_texty = self.steno_texty.drop(labels=['turn__steno_rec'], axis=1) # this inconsistency comes from the 'turn-fix'
-        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'steno_rec')
+        self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'steno_rec')
 
         # Merge osoby
         suffix = "__osoby"
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.steno_texty = drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
+        self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
 
         ## Merge osoby_zarazeni
         poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o_DT.isna()) & (self.osoby_zarazeni.id_organ==172) & (self.osoby_zarazeni.cl_funkce_CAT=='členství')] # všichni poslanci
@@ -177,7 +177,7 @@ class StenoTexty(StenoRec, OsobyZarazeni):
             'typ_casu': 'string',
             #'date': 'datetime64[ns]'
         }
-        df = self.pretipuj(df, header1, 'steno_texty [stage1]')
+        df = pretypuj(df, header1, 'steno_texty [stage1]')
 
 
         return df

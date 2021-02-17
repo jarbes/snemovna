@@ -4,15 +4,66 @@ from pathlib import Path
 from os import listdir #, path # TODO: asi stačí buď jen Path, nebo path
 import zipfile
 
-#from datetime import timezone, datetime
-#import pytz
+from collections import namedtuple
 
 import pandas as pd
+from IPython.display import display
 #import numpy as np
 
 import plotly.graph_objects as go
 
 from snemovna.setup_logger import log
+
+#######################################################################
+# Pomocn0 struktury pro asociovaná metadata k sloupcům tabulek
+
+MItem = namedtuple('MItem', ("typ", "popis"))
+
+class Meta(object):
+    def __init__(self, columns=[], defaults={}, dtypes={}, index_name='name'):
+        self.defaults = defaults
+        c = set([index_name]).union(columns).union(defaults.keys()).union(dtypes.keys())
+        self.data = pd.DataFrame([], columns=c).set_index(index_name)
+
+    def __init__(self, defaults={}, dtypes={}, index_name='name'):
+        self.defaults = defaults
+        columns = set([index_name]).union(defaults.keys()).union(dtypes.keys())
+        self.data = pd.DataFrame([], columns=columns).set_index(index_name)
+
+        for key, dtype in dtypes.items():
+            self.data[key] = self.data[key].astype(dtype)
+
+    def __getitem__(self, name):
+        found = self.data[self.data.index.isin([name])]
+        if len(found) > 0:
+            return found.iloc[0]
+        else:
+            return None
+
+    def __setitem__(self, name, val):
+        found = self.data[self.data.index.isin([name])]
+        if len(found) > 0:
+            for k, i in val.items():
+                self.data.loc[self.data.index == name, k] = i
+        else:
+            missing_keys = self.defaults.keys() - val.keys()
+            for k in missing_keys:
+                val[k] = self.defaults[k]
+            self.data = self.data.append(pd.Series(val.values(), index=val.keys(), name=name))
+
+    def __contains__(self, name):
+        found = self.data[self.data.index.isin([name])]
+        if len(found) > 0:
+            return True
+        else:
+            return False
+
+    def __iter__(self):
+        for c in self.data.index:
+            yield c
+
+    def __str__(self):
+          return str(self.data)
 
 #######################################################################
 # Stahování dat
@@ -42,20 +93,28 @@ def popis_tabulku(df):
     """
     print(f"Počet řádků v tabulce: {df.index.size}")
     print()
-    print("Počet unikátních hodnot pro každý sloupec:")
-    ret = df.nunique().sort_values(ascending=False)
-    print(df.nunique().sort_values(ascending=False))
-    print()
 
-    sloupce_s_jedinou_hodnotou = ret[ret == 1]
+    uniq = df.nunique()
+    is_null = df.isnull().sum()
+    not_null = len(df) - is_null
+    out = pd.DataFrame({
+        "sloupec": uniq.index,
+        "počet unikátních hodnot": uniq.values,
+        "počet nenulových hodnot": not_null.values,
+        "typ": df.dtypes.astype(str)
+    }).set_index('sloupec').sort_values(by="počet unikátních hodnot", ascending=False)
+    display(out)
+
+    sloupce_s_jedinou_hodnotou = out[out["počet unikátních hodnot"] == 1]
     if len(sloupce_s_jedinou_hodnotou) == 0:
         print("Každý sloupec obsahuje alespoň dvě hodnoty.")
     else:
         print("Sloupce s jedinou hodnotou:")
-        ret = "\n".join([f"  '{column}' má všude hodnotu '{df[column].iloc[0]}'" for (column, cnt) in sloupce_s_jedinou_hodnotou.iteritems()])
+        ret = "\n".join([f"  '{column}' má všude hodnotu '{df[column].iloc[0]}'" for column in sloupce_s_jedinou_hodnotou.index])
         print(ret)
 
     print()
+    print('Nulové hodnoty: ')
     popis_nulove_hodnoty(df)
 
 def popis_nulove_hodnoty(df):
@@ -96,12 +155,35 @@ def cetnost_opakovani_dle_sloupce(df, column, printout=False):
 #######################################################################
 # Čištění dat v pandas tabulkách
 
+def pretypuj(df, header, name=None, inplace=False):
+    if inplace:
+        new_df = df
+    else:
+        new_df = df.copy()
+
+    if name is not None:
+        log.debug(f"Přetypování v tabulce '{name}':")
+    for col in df.columns:
+        if col in header:
+            log.debug(f"Přetypovávám sloupec: '{col}'.")
+            if isinstance(header[col], str):
+                new_df[col] = df[col].astype(header[col])
+            elif isinstance(header[col], MItem):
+                new_df[col] = df[col].astype(header[col].typ)
+            else:
+                log.error(type(header[col]))
+                log.error(f"Chyba: Neznámý formát přetypování. Sloupec '{col}' nebylo možné přetypovat.")
+    return new_df
+
+
 def strip_all_string_columns(df):
     """
-    Trim whitespace from ends of each value across all series in dataframe
+    Trims whitespace from ends of each value across all series in dataframe.
     """
-    strip_strings = lambda x: x.strip() if isinstance(x, str) else x
-    return df.applymap(strip_strings)
+    for col in df.columns:
+        if str(df[col].dtype) == 'string':
+            df[col] = df[col].str.strip()
+    return df
 
 def mask_by_values(series, mask):
     """
@@ -117,34 +199,6 @@ def mask_by_values(series, mask):
             new_series = new_series.mask(series == val_to_mask, mask[val_to_mask])
 
     return new_series
-
-# TODO: change from inplace to return
-def drop_by_inconsistency (df, suffix, threshold, t1_name=None, t2_name=None):
-    inconsistency = {}
-    abundance = []
-
-    for col in df.columns[df.columns.str.endswith(suffix)]:
-        short_col = col[:len(col)-len(suffix)]
-
-        # Note: np.nan != np.nan by default
-        difference = df[(df[short_col] != df[col]) & ~(df[short_col].isna() & df[col].isna())]
-        if len(difference) > 0:
-          inconsistency[short_col] = float(len(difference))/len(df)
-          log.warning(f"While merging '{t1_name}' with '{t2_name}': Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}, inconsistency ratio: {inconsistency[short_col]:.2f}")
-        else:
-          abundance.append(short_col)
-
-    to_drop = [col for (col, i) in inconsistency.items() if i >= threshold]
-    if len(to_drop) > 0:
-        log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_drop} because of big inconsistency.")
-        df = df.drop(labels=to_drop, axis=1)
-
-    to_skip = [col + suffix for col in set(inconsistency.keys()).union(abundance)]
-    if len(to_skip) > 0:
-      log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_skip} because of abundance.")
-      df = df.drop(labels=to_skip, axis=1)
-
-    return df
 
 def format_to_datetime_and_report_skips(df, col, to_format):
     srs = df[col]

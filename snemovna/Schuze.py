@@ -17,6 +17,8 @@ class SchuzeObecne(Snemovna):
         log.debug('--> SchuzeObecne')
 
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/schuze.zip")
+        self.stahni_data()
+
         log.debug('<-- SchuzeObecne')
 
 
@@ -27,20 +29,21 @@ class Schuze(SchuzeObecne, Organy):
 
         self.paths['schuze'] = f"{self.data_dir}/schuze.unl"
         self.paths['schuze_stav'] = f"{self.data_dir}/schuze_stav.unl"
-        self.stahni_data()
 
-        self.schuze, self._schuze = self.nacti_schuze()
         self.schuze_stav, self._schuze_stav = self.nacti_schuze_stav()
+        self.schuze, self._schuze = self.nacti_schuze()
 
         # Připoj informace o stavu schůze
         suffix = "__schuze_stav"
         self.schuze = pd.merge(left=self.schuze, right=self.schuze_stav, on='id_schuze', suffixes = ("", suffix), how='left')
-        self.schuze = drop_by_inconsistency(self.schuze, suffix, 0.1, 'schuze', 'schuze_stav')
+        self.schuze = self.drop_by_inconsistency(self.schuze, suffix, 0.1, 'schuze', 'schuze_stav')
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
         self.schuze = self.schuze[self.schuze.id_org == id_organu_dle_volebniho_obdobi]
 
         self.df = self.schuze
+        self.nastav_meta()
+
         log.debug('<-- Schuze')
 
     def nacti_schuze(self):
@@ -48,37 +51,32 @@ class Schuze(SchuzeObecne, Organy):
         # Pro každou schůzi jsou v tabulce nejvýše dva záznamy, jeden vztahující se k návrhu pořadu, druhý ke schválenému pořadu.
         # I v případě neschválení pořadu schůze jsou dva záznamy, viz schuze:pozvanka a schuze_stav:stav.
         header = {
-          # Identifikátor schůze, není to primární klíč, je nutno používat i položku schuze:pozvanka. Záznamy schůzí stejného orgánu a stejného čísla (tj. schuze:id_org a schuze:schuze), mají stejné schuze:id_schuze a liší se pouze v schuze:pozvanka.
-          'id_schuze': 'Int64',
-          # Identifikátor orgánu, viz org:id_org.
-          'id_org': 'Int64',
-          # Číslo schůze.
-          'schuze': 'Int64',
-          # Předpokládaný začátek schůze; viz též tabulka schuze_stav
-          'od_schuze': 'string',
-          # Konec schůze. V případě schuze:pozvanka == 1 se nevyplňuje.
-          'do_schuze': 'string',
-          # Datum a čas poslední aktualizace.
-          'aktualizace': 'string',
-          # Druh záznamu: null - schválený pořad, 1 - navržený pořad.
-          'pozvanka': 'Int64'
+          'id_schuze': MItem('Int64', 'Identifikátor schůze, není to primární klíč, je nutno používat i položku schuze:pozvanka. Záznamy schůzí stejného orgánu a stejného čísla (tj. schuze:id_org a schuze:schuze), mají stejné schuze:id_schuze a liší se pouze v schuze:pozvanka.'),
+          'id_org': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_org.'),
+          'schuze': MItem('Int64', 'Číslo schůze.'),
+          'od_schuze': MItem('string', 'Předpokládaný začátek schůze; viz též tabulka schuze_stav'),
+          'do_schuze': MItem('string', 'Konec schůze. V případě schuze:pozvanka == 1 se nevyplňuje.'),
+          'aktualizace': MItem('string', 'Datum a čas poslední aktualizace.'),
+          'pozvanka__ORIG': MItem('Int64', 'Druh záznamu: null - schválený pořad, 1 - navržený pořad.')
         }
 
         _df = pd.read_csv(self.paths['schuze'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'schuze')
+        df = pretypuj(_df, header, 'schuze')
+        self.rozsir_meta(header, tabulka='schuze', vlastni=False)
 
         # Oprava známých chybných hodnot (očividných překlepů)
         df.at[768, 'od_schuze'] = "2020-05-31 09:00"
 
         # Přidej sloupec 'od_schuze' typu datetime
-        df['od_schuze_DT'] = pd.to_datetime(df['od_schuze'], format='%Y-%m-%d %H:%M')
-        df['od_schuze_DT'] = df['od_schuze_DT'].dt.tz_localize(self.tzn)
+        df['od_schuze'] = pd.to_datetime(df['od_schuze'], format='%Y-%m-%d %H:%M')
+        df['od_schuze'] = df['od_schuze_DT'].dt.tz_localize(self.tzn)
 
 
         # Přidej sloupec 'do_schuze' typu datetime
-        df['do_schuze_DT'] = pd.to_datetime(df['do_schuze'], format='%Y-%m-%d %H:%M')
-        df['do_schuze_DT'] = df['do_schuze_DT'].dt.tz_localize(self.tzn)
+        df['do_schuze'] = pd.to_datetime(df['do_schuze'], format='%Y-%m-%d %H:%M')
+        df['do_schuze'] = df['do_schuze_DT'].dt.tz_localize(self.tzn)
 
+        mask = {None: 'schválený pořad', 1: 'navržený pořad'}
         return df, _df
 
     def nacti_schuze_stav(self):
@@ -98,7 +96,8 @@ class Schuze(SchuzeObecne, Organy):
         }
 
         _df = pd.read_csv(self.paths['schuze_stav'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'schuze_stav')
+        df = pretypuj(_df, header, 'schuze_stav')
+        self.rozsir_meta(header, tabulka='schuze_stav', vlastni=False)
 
         assert df.id_schuze.size == df.id_schuze.nunique(), "Schůze může mít určen pouze jeden stav!"
 
@@ -118,10 +117,12 @@ class BodStav(SchuzeObecne):
         log.debug('--> BodStav')
 
         self.paths['bod_stav'] = f"{self.data_dir}/bod_stav.unl"
-        self.stahni_data()
+
         self.bod_stav, self._bod_stav = self.nacti_bod_stav()
 
         self.df = self.bod_stav
+        self.nastav_meta()
+
         log.debug('<-- BodStav')
 
     def nacti_bod_stav(self):
@@ -133,7 +134,8 @@ class BodStav(SchuzeObecne):
         }
 
         _df = pd.read_csv(self.paths['bod_stav'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'bod_stav')
+        df = pretypuj(_df, header, 'bod_stav')
+        self.rozsir_meta(header, tabulka='bod_stav', vlastni=False)
 
         return df, _df
 
@@ -147,15 +149,17 @@ class BodSchuze(BodStav):
         log.debug('--> BodSchuze')
 
         self.paths['bod_schuze'] = f"{self.data_dir}/bod_schuze.unl"
-        self.stahni_data()
+
         self.bod_schuze, self._bod_schuze = self.nacti_bod_schuze()
 
         # Připoj informace o stavu bodu
         suffix = "__bod_stav"
         self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, on='id_bod_stav', suffixes = ("", suffix), how='left')
-        self.bod_schuze = drop_by_inconsistency(self.bod_schuze, suffix, 0.1, 'bod_schuze', 'bod_stav')
+        self.bod_schuze = self.drop_by_inconsistency(self.bod_schuze, suffix, 0.1, 'bod_schuze', 'bod_stav')
 
         self.df = self.bod_schuze
+        self.nastav_meta()
+
         log.debug('<-- BodSchuze')
 
     def nacti_bod_schuze(self):
@@ -193,6 +197,7 @@ class BodSchuze(BodStav):
         }
 
         _df = pd.read_csv(self.paths['bod_schuze'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'bod_schuze')
+        df = pretypuj(_df, header, 'bod_schuze')
+        self.rozsir_meta(header, tabulka='bod_schuze', vlastni=False)
 
         return df, _df

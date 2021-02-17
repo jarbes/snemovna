@@ -11,10 +11,25 @@ from snemovna.utility import *
 from snemovna.setup_logger import log
 
 
-# TODO: Explicitly define variables in the header of each class
-# How about kwargs & args & multiple inheritance ???
-
 class Snemovna(object):
+    '''
+    Základní třída, která především nastavuje cesty pro stažení tabulek
+    '''
+    df = pd.DataFrame()
+    volebni_obdobi = None
+    id_obdobi = None
+    data_dir = None
+    url = None
+    zip_path = None
+    file_name = None
+    stahni = True
+    meta = Meta(
+        index_name='sloupec',
+        dtypes=dict(popis='string', tabulka='string', vlastni='bool', aktivni='bool'),
+        defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
+    )
+    paths = {}
+    tzn = pytz.timezone('Europe/Prague')
 
     def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=True, *args, **kwargs):
         log.debug("--> Snemovna")
@@ -22,18 +37,17 @@ class Snemovna(object):
         super().__init__(*args, **kwargs)
 
         self.volebni_obdobi = volebni_obdobi
-
         self.data_dir = data_dir
-        self.url=None
-        self.zip=None
-
         self.stahni = stahni
 
-        self.paths = {}
-
-        self.tzn = pytz.timezone('Europe/Prague')
-
         log.debug("<-- Snemovna")
+
+    def nastav_datovy_zdroj(self, url):
+        a = urlparse(url)
+        self.file_name = os.path.basename(a.path)
+        self.url = url
+        self.zip_path = f"{self.data_dir}/{self.file_name}"
+        log.debug(f"Nastavuji cestu k zip souboru na: {self.zip_path}")
 
     def missing_files(self):
         missing_files = []
@@ -41,31 +55,61 @@ class Snemovna(object):
         for p in paths_flat:
             if path.isfile(p) is not True:
                 missing_files.append(p)
-        log.debug(f"Number of missing files: {len(missing_files)}")
+        log.debug(f"Počet chybějících souborů: {len(missing_files)}")
         return missing_files
-
-    def nastav_datovy_zdroj(self, url):
-        a = urlparse(url)
-        self.file_name = os.path.basename(a.path)
-        self.url = url
-        self.zip = f"{self.data_dir}/{self.file_name}"
-        log.debug(f"Setting zip file path to: {self.zip}")
 
     def stahni_data(self):
         mf = self.missing_files()
-        log.debug(f"Number of missing files: {len(mf)}, stahni: {self.stahni}")
+        log.debug(f"Počet chybějících souborů: {len(mf)}, stahni: {self.stahni}")
         if (len(mf) > 0) or self.stahni:
-            if (self.url is not None) and (self.zip is not None) and (self.data_dir is not None):
-                download_and_unzip(self.url, self.zip, self.data_dir)
+            if (self.url is not None) and (self.zip_path is not None) and (self.data_dir is not None):
+                download_and_unzip(self.url, self.zip_path, self.data_dir)
             else:
-                log.error("Error: download paths not set!")
+                log.error("Chyba: cesty pro stahování nebyly nastaveny!")
 
-    def pretipuj(self, df, header, name=None):
-        if name is not None:
-            log.debug(f"Tabulka {name}:")
-        for col in df.columns:
-            if col in header:
-                log.debug(f"Přetypovávám sloupec: '{col}'.")
-                df[col] = df[col].astype(header[col])
-        return df
 
+    def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, inplace=False):
+        inconsistency = {}
+        abundance = []
+
+        for col in df.columns[df.columns.str.endswith(suffix)]:
+            short_col = col[:len(col)-len(suffix)]
+
+            # Note: np.nan != np.nan by default
+            difference = df[(df[short_col] != df[col]) & ~(df[short_col].isna() & df[col].isna())]
+            if len(difference) > 0:
+              inconsistency[short_col] = float(len(difference))/len(df)
+              log.warning(f"While merging '{t1_name}' with '{t2_name}': Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}, inconsistency ratio: {inconsistency[short_col]:.2f}")
+            else:
+              abundance.append(short_col)
+
+        to_drop = [col for (col, i) in inconsistency.items() if i >= threshold]
+        if len(to_drop) > 0:
+            log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_drop} because of big inconsistency.")
+
+        to_skip = [col + suffix for col in set(inconsistency.keys()).union(abundance)]
+        if len(to_skip) > 0:
+          log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_skip} because of abundance.")
+
+        if inplace == True:
+            df.drop(columns=set(to_drop).union(to_skip), inplace=True)
+            ret = df
+        else:
+            ret = df.drop(columns=set(to_drop).union(to_skip))
+
+        return ret
+
+    def nastav_meta(self):
+        for c in self.meta:
+            if c not in self.df.columns:
+                self.meta[c] = {"aktivni": False}
+            else:
+                self.meta[c] = {"aktivni": True}
+
+        for c in self.df.columns:
+            if c not in self.meta:
+                log.warning(f"Pro sloupec {c} nebyla nalezena metadata!")
+
+    def rozsir_meta(self, header, tabulka=None, vlastni=None):
+        for k, i in header.items():
+            self.meta[k] = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)

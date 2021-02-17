@@ -50,7 +50,7 @@ class Steno(StenoObecne, Organy):
         }
 
         _df = pd.read_csv(self.paths['steno'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'steno')
+        df = pretypuj(_df, header, 'steno')
 
         # Přidej sloupec 'od_schuze' typu datetime
         df['od_steno_DT'] = pd.to_datetime(df['od_steno'], format='%Y-%m-%d')
@@ -75,7 +75,7 @@ class StenoBod(Steno, Organy):
         # Merge steno
         suffix = "__steno"
         self.steno_bod = pd.merge(left=self.steno_bod, right=self.steno, on='id_steno', suffixes = ("", suffix), how='left')
-        self.steno_bod = drop_by_inconsistency(self.steno_bod, suffix, 0.1, "steno_bod", "steno")
+        self.steno_bod = self.drop_by_inconsistency(self.steno_bod, suffix, 0.1, "steno_bod", "steno")
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
         self.steno_bod = self.steno_bod[self.steno_bod.id_org == id_organu_dle_volebniho_obdobi]
@@ -91,7 +91,7 @@ class StenoBod(Steno, Organy):
         }
 
         _df = pd.read_csv(self.paths['steno_bod'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'steno_bod')
+        df = pretypuj(_df, header, 'steno_bod')
 
         return df, _df
 
@@ -117,7 +117,7 @@ class StenoRec(Steno, Osoby, BodSchuze):
         # Merge steno
         suffix = "__steno"
         self.steno_rec = pd.merge(left=self.steno_rec, right=self.steno, on='id_steno', suffixes = ("", suffix), how='left')
-        self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1, "steno_rec", "steno")
+        self.steno_rec = self.drop_by_inconsistency(self.steno_rec, suffix, 0.1, "steno_rec", "steno")
 
         id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
         self.steno_rec = self.steno_rec[self.steno_rec.id_org == id_organu_dle_volebniho_obdobi]
@@ -125,12 +125,12 @@ class StenoRec(Steno, Osoby, BodSchuze):
         # Merge osoby
         suffix = "__osoby"
         self.steno_rec = pd.merge(left=self.steno_rec, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'osoby')
+        self.steno_rec = self.drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'osoby')
 
         # Merge bod schuze
         #suffix = "__bod_schuze"
         #self.steno_rec = pd.merge(left=self.steno_rec, right=self.bod_schuze, on='id_bod', suffixes = ("", suffix), how='left')
-        #self.steno_rec = drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'bod_schuze')
+        #self.steno_rec = self.drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'bod_schuze')
 
         self.df = self.steno_rec
 
@@ -146,7 +146,7 @@ class StenoRec(Steno, Osoby, BodSchuze):
         }
 
         _df = pd.read_csv(self.paths['steno_rec'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = self.pretipuj(_df, header, 'steno_rec')
+        df = pretypuj(_df, header, 'steno_rec')
 
         df['druh_CAT'] = df.druh.astype(str).\
             mask(df.druh.isin([0, None]), 'neznámo').\
