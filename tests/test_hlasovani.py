@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from Hlasovani import Hlasovani
+from snemovna.Hlasovani import Hlasovani
 
 class TestHlasovani(unittest.TestCase):
 
