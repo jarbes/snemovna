@@ -1,6 +1,7 @@
 
+# Poslanci a Osoby
 # Agenda eviduje osoby, jejich zařazení do orgánů a jejich funkce v orgánech a orgány jako takové.
-# Cesty k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1301
+# Informace viz https://www.psp.cz/sqw/hp.sqw?k=1301.
 
 from os import path
 import pandas as pd
@@ -12,9 +13,8 @@ from snemovna.Snemovna import Snemovna
 from snemovna.setup_logger import log
 
 
-# Agenda eviduje osoby, jejich zařazení do orgánů a jejich funkce v orgánech a orgány jako takové.
-
 class PoslanciOsobyObecne(Snemovna):
+    """Obecná třída pro dceřiné třídy (Osoby, Organy, Poslanci)."""
 
     def __init__(self, *args, **kwargs):
         log.debug("--> PoslanciOsobyObecne")
@@ -30,6 +30,15 @@ class PoslanciOsobyObecne(Snemovna):
 
 # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
 class TypOrganu(PoslanciOsobyObecne):
+    """
+    Pomocná třída, která nese informace o typech orgánů a jejich hierarchiích.
+
+
+    Methods
+    -------
+    nacti_typ_organu()
+        Načte tabulku typ_organu do pandas a přetypuje sloupce
+    """
 
     def __init__(self, *args, **kwargs):
         log.debug("--> TypOrganu")
@@ -69,8 +78,8 @@ class Organy(TypOrganu):
 
         super(Organy, self).__init__(*args, **kwargs)
 
-        # Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
-        # slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
+        # Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně.
+        # Slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
         self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
         # Některé orgány mají nadřazený orgán a pak je položka organy:organ_id_organ vyplněna,
         # přičemž pouze v některých případech se tyto vazby využívají.
@@ -81,7 +90,9 @@ class Organy(TypOrganu):
         # Připoj Typu orgánu
         suffix = "__typ_organu"
         self.organy = pd.merge(left=self.organy, right=self.typ_organu, left_on="id_typ_organu", right_on="id_typ_org", suffixes=("",suffix), how='left')
-        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou
+
+        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou.
+        # Tímto se vyhneme varování funkce 'drop_by_inconsistency'.
         self.organy.drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
         self.organy = self.drop_by_inconsistency(self.organy, suffix, 0.1, 'organy', 'typ_organu')
 

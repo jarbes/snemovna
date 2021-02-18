@@ -90,16 +90,16 @@ class Hlasovani(HlasovaniObecne, Organy):
             'schuze': MItem('Int64', 'Číslo schůze'),
             'cislo': MItem('Int64', 'Číslo hlasování'),
             'bod': MItem('Int64', 'Bod pořadu schůze; je-li menší než 1, pak jde o procedurální hlasování nebo o hlasování k bodům, které v době hlasování neměly přiděleno číslo.'),
-            'datum__ZDROJ': MItem('string', 'Datum hlasování [den]'),
-            'cas__ZDROJ': MItem('string', 'Čas hlasování'),
+            'datum__ORIG': MItem('string', 'Datum hlasování [den]'),
+            'cas': MItem('string', 'Čas hlasování'),
             "pro": MItem('Int64', 'Počet hlasujících pro'),
             "proti": MItem('Int64', 'Počet hlasujících proti'),
             "zdrzel": MItem('Int64', 'Počet hlasujících zdržel se, tj. stiskl tlačítko X'),
             "nehlasoval": MItem('Int64', 'Počet přihlášených, kteří nestiskli žádné tlačítko'),
             "prihlaseno": MItem('Int64', 'Počet přihlášených poslanců'),
             "kvorum": MItem('Int64', 'Kvórum, nejmenší počet hlasů k přijetí návrhu'),
-            "druh_hlasovani__ZDROJ": MItem('string', 'Druh hlasování: N - normální, R - ruční (nejsou známy hlasování jednotlivých poslanců)'),
-            "vysledek__ZDROJ": MItem('string', 'Výsledek: A - přijato, R - zamítnuto, jinak zmatečné hlasování'),
+            "druh_hlasovani__ORIG": MItem('string', 'Druh hlasování: N - normální, R - ruční (nejsou známy hlasování jednotlivých poslanců)'),
+            "vysledek__ORIG": MItem('string', 'Výsledek: A - přijato, R - zamítnuto, jinak zmatečné hlasování'),
             "nazev_dlouhy": MItem('string', 'Dlouhý název bodu hlasování'),
             "nazev_kratky": MItem('string', 'Krátký název bodu hlasování')
         }
@@ -113,7 +113,7 @@ class Hlasovani(HlasovaniObecne, Organy):
         df = strip_all_string_columns(df)
 
         # Přidej 'datum'
-        df['datum'] = pd.to_datetime(df['datum__ZDROJ'] + ' ' + df['cas__ZDROJ'], format='%d.%m.%Y %H:%M')
+        df['datum'] = pd.to_datetime(df['datum__ORIG'] + ' ' + df['cas'], format='%d.%m.%Y %H:%M')
         df['datum'] = df['datum'].dt.tz_localize(self.tzn)
         self.meta['datum'] =  dict(popis='Datum hlasování', tabulka='hlasovani', vlastni=True)
 
@@ -126,11 +126,13 @@ class Hlasovani(HlasovaniObecne, Organy):
         self.meta['bod__KAT'] = dict(popis='Katogorie bodu hlasování', tabulka='hlasovani', vlastni=True)
 
         # Interpretuj 'výsledek'
-        df["vysledek"] = df.vysledek__ZDROJ.mask(df.vysledek__ZDROJ == 'A', 'přijato').mask(df.vysledek__ZDROJ == 'R', 'zamítnuto')
+        mask = {'A': "přijato", 'R': 'zamítnuto'}
+        df["vysledek"] = mask_by_values(df.vysledek__ORIG, mask).astype('string')
         self.meta['vysledek'] = dict(popis='Výsledek hlasování', tabulka='hlasovani', vlastni=True)
 
         # Interpretuj 'druh hlasování'
-        df["druh_hlasovani"] = df.druh_hlasovani__ZDROJ.mask(df.druh_hlasovani__ZDROJ == 'N', 'normální').mask(df.druh_hlasovani__ZDROJ == 'R', 'ruční')
+        mask = {'N': 'normální', 'R': 'ruční'}
+        df["druh_hlasovani"] = mask_by_values(df.druh_hlasovani__ORIG, mask).astype('string')
         self.meta['druh_hlasovani'] =  dict(popis='Druh hlasování', tabulka='hlasovani', vlastni=True)
 
         return df, _df

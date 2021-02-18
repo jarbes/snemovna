@@ -15,20 +15,6 @@ class Snemovna(object):
     '''
     Základní třída, která především nastavuje cesty pro stažení tabulek
     '''
-    df = pd.DataFrame()
-    volebni_obdobi = None
-    id_obdobi = None
-    data_dir = None
-    url = None
-    zip_path = None
-    file_name = None
-    stahni = True
-    meta = Meta(
-        index_name='sloupec',
-        dtypes=dict(popis='string', tabulka='string', vlastni='bool', aktivni='bool'),
-        defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
-    )
-    paths = {}
     tzn = pytz.timezone('Europe/Prague')
 
     def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=True, *args, **kwargs):
@@ -36,9 +22,20 @@ class Snemovna(object):
 
         super().__init__(*args, **kwargs)
 
+        self.df = pd.DataFrame()
         self.volebni_obdobi = volebni_obdobi
+        self.id_obdobi = None
         self.data_dir = data_dir
+        self.url = None
+        self.zip_path = None
+        self.file_name = None
         self.stahni = stahni
+        self.meta = Meta(
+            index_name='sloupec',
+            dtypes=dict(popis='string', tabulka='string', vlastni='bool', aktivni='bool'),
+            defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
+        )
+        self.paths = {}
 
         log.debug("<-- Snemovna")
 
