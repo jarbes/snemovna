@@ -1,8 +1,8 @@
-from Snemovna import *
-from Osoby import *
-from Schuze import *
+from snemovna.Snemovna import *
+from snemovna.PoslanciOsoby import *
+from snemovna.Schuze import *
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 # Stenozáznamy jsou těsnopisecké záznamy jednání Poslanecké sněmovny a jejích orgánů. V novějších volebních období obsahují časový úsek řádově 10 minut (případně mimo doby přerušení a podobně). Jsou číslovány v číselné řadě od začátku schůze.
 
@@ -13,6 +13,9 @@ class StenoObecne(Snemovna):
         super(StenoObecne, self).__init__(*args, **kwargs)
 
         self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/steno.zip")
+
+        self.stahni_data()
+
         log.debug('<-- StenoObecne')
 
 
@@ -26,8 +29,6 @@ class Steno(StenoObecne, Organy):
         super(Steno, self).__init__(*args, **kwargs)
 
         self.paths['steno'] = f"{self.data_dir}/steno.unl"
-        #self.paths['steno_bod'] = f"{self.data_dir}/steno_bod.unl"
-        self.stahni_data()
 
         self.steno, self._steno = self.nacti_steno()
 
@@ -35,26 +36,30 @@ class Steno(StenoObecne, Organy):
         self.steno = self.steno[self.steno.id_org == id_organu_dle_volebniho_obdobi]
 
         self.df = self.steno
+        self.nastav_meta()
+
         log.debug('<-- Steno')
 
     def nacti_steno(self):
         header = {
-            'id_steno': 'Int64', #Identifikátor stenozáznamu
-            'id_org': 'Int64', # Identifikátor orgánu stenozáznamu (v případě PS je to volební období), viz org:id_org.
-            'schuze': 'Int64', # Číslo schůze.
-            'turn': 'Int64', # Číslo stenozáznamu (turn). Pokud číselná řada je neúplná, tj. obsahuje mezery, pak chybějící obsahují záznam z neveřejného jednání. V novějších volebních období se i v těchto případech "stenozáznamy" vytvářejí, ale obsahují pouze informaci o neveřejném jednání.
-            'od_steno': 'string', # Datum začátku stenozáznamu.
-            'jd': 'Int64', # Číslo jednacího dne v rámci schůze (používá se např. při konstrukci URL na index stenozáznamu dle dnů).
-            'od_t': 'Int64', # Čas začátku stenozáznamu v minutách od začátku kalendářního dne; pokud je null či menší než nula, není známo. Tj. převod na čas typu H:M je pomocí H = div(od_t, 60), M = mod(od_t, 60).
-            'do_t': 'Int64' # Čas konce stenozáznamu v minutách od začátku kalendářního dne; pokud je null či menší než nula, není známo. V některých případech může být od_t == do_t; v některých případech může být i od_t > do_t -- platné pouze v případě, že během stena dojde k změně kalendářního dne (například 23:50 - 00:00).
+            'id_steno': MItem('Int64', 'Identifikátor stenozáznamu'),
+            'id_org': MItem('Int64', 'Identifikátor orgánu stenozáznamu (v případě PS je to volební období), viz Organy:id_organ.'),
+            'schuze': MItem('Int64', 'Číslo schůze.'),
+            'turn': MItem('Int64', 'Číslo stenozáznamu (turn). Pokud číselná řada je neúplná, tj. obsahuje mezery, pak chybějící obsahují záznam z neveřejného jednání. V novějších volebních období se i v těchto případech "stenozáznamy" vytvářejí, ale obsahují pouze informaci o neveřejném jednání.'),
+            'od_steno': MItem('string', 'Datum začátku stenozáznamu.'),
+            'jd': MItem('Int64', 'Číslo jednacího dne v rámci schůze (používá se např. při konstrukci URL na index stenozáznamu dle dnů).'),
+            'od_t': MItem('Int64', 'Čas začátku stenozáznamu v minutách od začátku kalendářního dne; pokud je null či menší než nula, není známo. Tj. převod na čas typu H:M je pomocí H = div(od_t, 60), M = mod(od_t, 60).'),
+            'do_t': MItem('Int64', 'Čas konce stenozáznamu v minutách od začátku kalendářního dne; pokud je null či menší než nula, není známo. V některých případech může být od_t == do_t; v některých případech může být i od_t > do_t -- platné pouze v případě, že během stena dojde k změně kalendářního dne (například 23:50 - 00:00).'),
         }
 
         _df = pd.read_csv(self.paths['steno'], sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'steno')
+        self.rozsir_meta(header, tabulka='steno', vlastni=False)
 
+        # TODO: zkombinul od_steno a od_t !!!
         # Přidej sloupec 'od_schuze' typu datetime
-        df['od_steno_DT'] = pd.to_datetime(df['od_steno'], format='%Y-%m-%d')
-        df['od_steno_DT'] = df['od_steno_DT'].dt.tz_localize(self.tzn)
+        df['od_steno'] = pd.to_datetime(df['od_steno'], format='%Y-%m-%d')
+        df['od_steno'] = df['od_steno'].dt.tz_localize(self.tzn)
 
         return df, _df
 
@@ -68,7 +73,6 @@ class StenoBod(Steno, Organy):
         super(StenoBod, self).__init__(*args, **kwargs)
 
         self.paths['steno_bod'] = f"{self.data_dir}/steno_bod.unl"
-        self.stahni_data()
 
         self.steno_bod, self._steno_bod = self.nacti_steno_bod()
 
@@ -81,17 +85,20 @@ class StenoBod(Steno, Organy):
         self.steno_bod = self.steno_bod[self.steno_bod.id_org == id_organu_dle_volebniho_obdobi]
 
         self.df = self.steno_bod
+        self.nastav_meta()
+
         log.debug('<-- StenoBod')
 
     def nacti_steno_bod(self):
         header = {
-                'id_steno': 'Int64', #Identifikátor stenozáznamu, viz steno:id_steno.
-                'aname': 'Int64', # Pozice v indexu jednacího dne.
-                'id_bod': 'Int64', # Identifikace bodu pořadu schůze, viz bod_schuze:id_bod. Je-li null či 0, pak pro daný úsek stenozáznamů není známo číslo bodu (např. každé přerušení schůze znamená při automatickém zpracování neznámé číslo bodu).
+                'id_steno': MItem('Int64', 'Identifikátor stenozáznamu, viz steno:id_steno.'),
+                'aname': MItem('Int64', 'Pozice v indexu jednacího dne.'),
+                'id_bod': MItem('Int64', 'Identifikace bodu pořadu schůze, viz bod_schuze:id_bod. Je-li null či 0, pak pro daný úsek stenozáznamů není známo číslo bodu (např. každé přerušení schůze znamená při automatickém zpracování neznámé číslo bodu).')
         }
 
         _df = pd.read_csv(self.paths['steno_bod'], sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'steno_bod')
+        self.rozsir_meta(header, tabulka='steno_bod', vlastni=False)
 
         return df, _df
 
@@ -110,7 +117,6 @@ class StenoRec(Steno, Osoby, BodSchuze):
         super(StenoRec, self).__init__(*args, **kwargs)
 
         self.paths['steno_rec'] = f"{self.data_dir}/rec.unl"
-        self.stahni_data()
 
         self.steno_rec, self._steno_rec = self.nacti_steno_rec()
 
@@ -133,28 +139,27 @@ class StenoRec(Steno, Osoby, BodSchuze):
         #self.steno_rec = self.drop_by_inconsistency(self.steno_rec, suffix, 0.1, 'steno_rec', 'bod_schuze')
 
         self.df = self.steno_rec
+        self.nastav_meta()
 
         log.debug('<-- StenoRec')
 
     def nacti_steno_rec(self):
         header = {
-                'id_steno': 'Int64', #Identifikátor stenozáznamu, viz steno:id_steno.
-                'id_osoba': 'Int64', #Identifikátor osoby, viz osoba:id_osoba.
-                'aname': 'Int64', # Identifikace vystoupení v rámci stenozáznamu.
-                'id_bod': 'Int64', # Identifikace bodu pořadu schůze, viz bod_schuze:id_bod. Je-li null či 0, pak pro daný úsek stenozáznamů není známo číslo bodu (např. každé přerušení schůze znamená při automatickém zpracování neznámé číslo bodu).
-                'druh': 'Int64' #Druh vystoupení řečníka: 0 či null - neznámo, 1 - nezpracováno, 2 - předsedající (ověřeno), 3 - řečník (ověřeno), 4 - předsedající, 5 - řečník.
+                'id_steno': MItem('Int64', 'Identifikátor stenozáznamu, viz Steno:id_steno.'),
+                'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba.'),
+                'aname': MItem('Int64', 'Identifikace vystoupení v rámci stenozáznamu.'),
+                'id_bod': MItem('Int64', 'Identifikace bodu pořadu schůze, viz bod_schuze:id_bod. Je-li null či 0, pak pro daný úsek stenozáznamů není známo číslo bodu (např. každé přerušení schůze znamená při automatickém zpracování neznámé číslo bodu).'),
+                'druh__ORIG': MItem('Int64', 'Druh vystoupení řečníka: 0 či null - neznámo, 1 - nezpracováno, 2 - předsedající (ověřeno), 3 - řečník (ověřeno), 4 - předsedající, 5 - řečník.'),
         }
 
         _df = pd.read_csv(self.paths['steno_rec'], sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'steno_rec')
+        self.rozsir_meta(header, tabulka='steno_rec', vlastni=False)
 
-        df['druh_CAT'] = df.druh.astype(str).\
-            mask(df.druh.isin([0, None]), 'neznámo').\
-            mask(df.druh == 1, 'nezpracováno').\
-            mask(df.druh == 2, 'předsedající (ověřeno)').\
-            mask(df.druh == 3, 'řečník (ověřeno)').\
-            mask(df.druh == 4, 'předsedající').\
-            mask(df.druh == 5, 'řečník')
+        mask = { None: 'neznámo', 0: 'neznámo', 1: 'nezpracováno', 2: 'předsedající (ověřeno)',
+            3: 'řečník (ověřeno)', 4: 'předsedající', 5: 'řečník' }
+        df['druh'] = mask_by_values(df.druh__ORIG, mask).astype('string')
+        self.meta['druh'] = dict(popis='Druh vystoupení řečníka.', tabulka='steno_rec', vlastni=True)
 
         return df, _df
 

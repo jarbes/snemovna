@@ -126,7 +126,7 @@ class BodStav(SchuzeObecne):
 
     def nacti_bod_stav(self):
         header = {
-            'id_bod_stav__ORIG': MItem('Int64', 'Typ stavu bodu schůze: typ 3 - neprojednatelný znamená vyřazen z pořadu či neprojednatelný z důvodu legislativního procesu.'),
+            'id_bod_stav': MItem('Int64', 'Typ stavu bodu schůze: typ 3 - neprojednatelný znamená vyřazen z pořadu či neprojednatelný z důvodu legislativního procesu.'),
             'popis': MItem('string', 'Popis stavu bodu.')
         }
 
@@ -134,8 +134,8 @@ class BodStav(SchuzeObecne):
         df = pretypuj(_df, header, 'bod_stav')
         self.rozsir_meta(header, tabulka='bod_stav', vlastni=False)
 
-        df['id_bod_stav'] = df.id_bod_stav__ORIG.astype(str).mask(df.id_bod_stav__ORIG == 3, 'neprojednatelný')
-        self.meta['id_bod_stav'] = dict(popis='Typ stavu bodu schůze.', tabulka='bod_stav', vlastni=True)
+        df['id_bod_stav__KAT'] = df.id_bod_stav.astype(str).mask(df.id_bod_stav == 3, 'neprojednatelný')
+        self.meta['id_bod_stav__KAT'] = dict(popis='Typ stavu bodu schůze.', tabulka='bod_stav', vlastni=True)
 
         return df, _df
 
@@ -154,7 +154,7 @@ class BodSchuze(BodStav):
 
         # Připoj informace o stavu bodu
         suffix = "__bod_stav"
-        self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, left_on='id_bod_stav', right_on='id_bod_stav__ORIG', suffixes = ("", suffix), how='left')
+        self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, on='id_bod_stav', suffixes = ("", suffix), how='left')
         self.bod_schuze = self.drop_by_inconsistency(self.bod_schuze, suffix, 0.1, 'bod_schuze', 'bod_stav')
 
         self.df = self.bod_schuze

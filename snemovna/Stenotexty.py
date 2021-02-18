@@ -16,11 +16,11 @@ from urllib.parse import urlparse
 from joblib import Parallel, delayed, cpu_count
 #from multiprocessing.pool import ThreadPool
 
-from Snemovna import *
-from Osoby import *
-from Stenozaznamy import *
+from snemovna.Snemovna import *
+from snemovna.PoslanciOsoby import *
+from snemovna.Stenozaznamy import *
 
-from setup_logger import log
+from snemovna.setup_logger import log
 
 Recnik = namedtuple("Recnik", ['id_rec', 'id_osoba'])
 Promluva = namedtuple('Promluva', ["text", "recnik", "rid", "cas_od", "cas_do"])
@@ -28,12 +28,14 @@ Cas = namedtuple('Cas', ['typ', 'hodina', 'minuta'])
 
 
 # Tabulka StenoText
-# Pozor: Texty nejsou součástí oficiálních dat PS!
-# Texty se stahují a scrapují z internetových stránek PS, viz např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
+# Texty nejsou součástí oficiálních tabulek PS, vytváříme je web scrapingem.
+# Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
 class StenoTexty(StenoRec, OsobyZarazeni):
 
     def __init__(self, *args, **kwargs):
+        log.debug('--> StenoTexty')
+
         super(StenoTexty, self).__init__(*args, **kwargs)
 
         self.paths['steno_text'] = f"{self.data_dir}/steno_texty-{self.volebni_obdobi}.pkl"
@@ -82,25 +84,25 @@ class StenoTexty(StenoRec, OsobyZarazeni):
         self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
 
         ## Merge osoby_zarazeni
-        poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o_DT.isna()) & (self.osoby_zarazeni.id_organ==172) & (self.osoby_zarazeni.cl_funkce_CAT=='členství')] # všichni poslanci
-        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.do_o_DT.isna()) & (self.osoby_zarazeni.cl_funkce_CAT=='členství')]
+        poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.id_organ==172) & (self.osoby_zarazeni.cl_funkce=='členství')] # všichni poslanci
+        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.cl_funkce=='členství')]
         self.steno_texty = pd.merge(self.steno_texty, strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
 
         ## Merge Strana
-        snemovna_id = self.organy[self.organy.nazev_organu_cz=="Poslanecká sněmovna"].sort_values(by="od_organ").iloc[-1].id_organ
+        snemovna_id = self.organy[self.organy.nazev_organu_cz=="Poslanecká sněmovna"].sort_values(by="id_organ").iloc[-1].id_organ
         snemovna_od = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].od_organ).tz_localize("Europe/Prague")
         snemovna_do = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].do_organ).tz_localize("Europe/Prague")
 
-        snemovna_cond = (self.osoby_zarazeni.od_o_DT >= snemovna_od) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.cl_funkce_CAT=='členství')
+        snemovna_cond = (self.osoby_zarazeni.od_o >= snemovna_od) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.cl_funkce=='členství')
         if pd.isnull(snemovna_do) == False:
-            snemovna_cond = snemovna_cond | (self.osoby_zarazeni.do_o_DT >= snemovna_do)
+            snemovna_cond = snemovna_cond | (self.osoby_zarazeni.do_o >= snemovna_do)
         s = self.osoby_zarazeni[snemovna_cond].groupby('id_osoba').size().sort_values()
         prebehlici = s[s > 1]
         print("prebehlici: ", prebehlici)
-        
+
         for id_prebehlika in prebehlici.index:
             for idx, row in self.osoby_zarazeni[ snemovna_cond & (self.osoby_zarazeni.id_osoba == id_prebehlika)].iterrows():
-                od, do, id_organ, zkratka =  row['od_o_DT'], row['do_o_DT'], row['id_organ'], row['zkratka']
+                od, do, id_organ, zkratka =  row['od_o'], row['do_o'], row['id_organ'], row['zkratka']
                 print(id_prebehlika, od, do, id_organ, zkratka)
                 self.steno_texty.zkratka.mask((self.steno_texty.date >= od) & (self.steno_texty.date <= do) & (self.steno_texty.id_osoba == id_prebehlika), zkratka, inplace=True)
 
@@ -108,9 +110,28 @@ class StenoTexty(StenoRec, OsobyZarazeni):
         self.steno_texty.drop(labels=to_drop, inplace=True, axis=1)
 
         self.df = self.steno_texty
+        self.nastav_meta()
+
+        log.debug('<-- StenoTexty')
 
     def nacti_steno_texty(self):
+        # TODO: This is a duplicate, the header should be defined on ly at one place
+        header = {
+            'text': MItem('string', 'Text promluvy s odstraněnými poznámkami (tj. bez textu v závorkách atp.)'),
+            'text_s_poznamkami': MItem('string', 'Text promluvy včetně poznámek'),
+            'schuze': MItem('Int64', 'Číslo schůze.'),
+            'turn': MItem('Int64', 'Číslo stenozáznamu v rámci schůze.'),
+            'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba.'),
+            "id_rec": MItem('Int64', 'Identifikátor řečníka, viz StenoRec: id_rec'),
+            'poznamka': MItem('string', 'Poznámka extrahovaá ze stenozáznamu.'),
+            'je_poznamka': MItem('bool', 'Příznak, že celá promluva je poznámka.'),
+            'cas': MItem('string', "Čas extrahovaný ze stenozáznamu."),
+            'typ_casu': MItem('string', 'Typ času extrahovaného ze stenozáznamu [začátek, přerušení pokračování, ukončení, obecný].'),
+            "date": MItem('string', 'Datum extrahované ze stenozáznamu.')
+        }
         df = pd.read_pickle(self.paths['steno_text'])
+        self.rozsir_meta(header, tabulka='steno_rec', vlastni=False)
+
         return df, df
 
     def results2df(self, results, args):
