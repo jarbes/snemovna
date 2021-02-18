@@ -3,6 +3,8 @@
 # Agenda eviduje osoby, jejich zařazení do orgánů a jejich funkce v orgánech a orgány jako takové.
 # Informace viz https://www.psp.cz/sqw/hp.sqw?k=1301.
 
+# Poznámka: Většina značení se drží konvencí, které byly zvoleny na uvedené stránce. Výjimkou jsou sloupce 'id_organu' (v tabulkách též jako 'id_org') a id_typ_organu (v tabulkách též jako 'id_typ_org'), pro něž jsme značení sjednotili a používéme vždy první variantu.
+
 from os import path
 import pandas as pd
 
@@ -27,8 +29,8 @@ class PoslanciOsobyObecne(Snemovna):
 
         log.debug("<-- PoslanciOsobyObecne")
 
-
 # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
+# TODO: Je zde nějaká časová závislost na volebním období?
 class TypOrganu(PoslanciOsobyObecne):
     """
     Pomocná třída, která nese informace o typech orgánů a jejich hierarchiích.
@@ -56,11 +58,11 @@ class TypOrganu(PoslanciOsobyObecne):
 
     def nacti_typ_organu(self):
         header = {
-            'id_typ_org': MItem('Int64', 'Identifikátor typu orgánu'),
-            'typ_id_typ_org': MItem('Int64', 'Identifikátor nadřazeného typu orgánu (TypOrganu:id_typ_org), pokud je null či nevyplněno, pak nemá nadřazený typ'),
-            'nazev_typ_org_cz': MItem('string', 'Název typu orgánu v češtině'),
-            'nazev_typ_org_en': MItem('string', 'Název typu orgánu v angličtině'),
-            'typ_org_obecny': MItem('Int64', 'Obecný typ orgánu, pokud je vyplněný, odpovídá záznamu v TypOrganu:id_typ_org. Pomocí tohoto sloupce lze najít např. všechny výbory v různých typech zastupitelských sborů.'),
+            'id_typ_organu': MItem('Int64', 'Identifikátor typu orgánu'),
+            'typ_id_typ_organu': MItem('Int64', 'Identifikátor nadřazeného typu orgánu (TypOrganu:id_typ_organu), pokud je null či nevyplněno, pak nemá nadřazený typ'),
+            'nazev_typ_organu_cz': MItem('string', 'Název typu orgánu v češtině'),
+            'nazev_typ_organu_en': MItem('string', 'Název typu orgánu v angličtině'),
+            'typ_organu_obecny': MItem('Int64', 'Obecný typ orgánu, pokud je vyplněný, odpovídá záznamu v TypOrganu:id_typ_organu. Pomocí tohoto sloupce lze najít např. všechny výbory v různých typech zastupitelských sborů.'),
             'priorita': MItem('Int64', 'Priorita při výpisu')
         }
 
@@ -71,6 +73,7 @@ class TypOrganu(PoslanciOsobyObecne):
         return df, _df
 
 
+# TODO: Je zde nějaká časová závislost na volebním období?
 class Organy(TypOrganu):
 
     def __init__(self,  *args, **kwargs):
@@ -81,7 +84,7 @@ class Organy(TypOrganu):
         # Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně.
         # Slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
         self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
-        # Některé orgány mají nadřazený orgán a pak je položka organy:organ_id_organ vyplněna,
+        # Některé orgány mají nadřazený orgán a pak je položka organy:organ_id_organu vyplněna,
         # přičemž pouze v některých případech se tyto vazby využívají.
         self.paths['organy'] = f"{self.data_dir}/organy.unl"
 
@@ -89,7 +92,7 @@ class Organy(TypOrganu):
 
         # Připoj Typu orgánu
         suffix = "__typ_organu"
-        self.organy = pd.merge(left=self.organy, right=self.typ_organu, left_on="id_typ_organu", right_on="id_typ_org", suffixes=("",suffix), how='left')
+        self.organy = pd.merge(left=self.organy, right=self.typ_organu, left_on="id_typ_organu", right_on="id_typ_organu", suffixes=("",suffix), how='left')
 
         # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou.
         # Tímto se vyhneme varování funkce 'drop_by_inconsistency'.
@@ -100,6 +103,17 @@ class Organy(TypOrganu):
             self.volebni_obdobi = self.posledni_poslanecka_snemovna().od_organ.year
             log.info(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
 
+        organ = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0]
+        self.id_organu = organ.id_organu
+        self.volebni_obdobi_od = organ.od_organ
+        self.volebni_obdobi_do = organ.do_organ
+
+        # Zúžení na aktuální volební období
+        podminka = (self.organy.od_organ >= self.volebni_obdobi_od)
+        if pd.notna(self.volebni_obdobi_do):
+            podminka = podminka & (self.organy.do_organ <= self.volebni_obdobi_do)
+        self.organy = self.organy[podminka]
+
         self.df = self.organy
         self.nastav_meta()
 
@@ -107,14 +121,14 @@ class Organy(TypOrganu):
 
     def nacti_organy(self):
         header = {
-            "id_organ": MItem('Int64', 'Identifikátor orgánu'),
-            "organ_id_organ": MItem('Int64', 'Identifikátor nadřazeného orgánu, viz Organy:id_organ'),
+            "id_organu": MItem('Int64', 'Identifikátor orgánu'),
+            "organ_id_organu": MItem('Int64', 'Identifikátor nadřazeného orgánu, viz Organy:id_organu'),
             "id_typ_organu": MItem('Int64', 'Typ orgánu, viz TypOrganu:id_typ_organu'),
             "zkratka": MItem('string', 'Zkratka orgánu, bez diakritiky, v některých připadech se zkratka při zobrazení nahrazuje jiným názvem'),
             "nazev_organu_cz": MItem("string", 'Název orgánu v češtině'),
             "nazev_organu_en": MItem("string", 'Název orgánu v angličtině'),
-            "od_organ": MItem('datetime64[ns]', 'Ustavení orgánu'),
-            "do_organ": MItem('datetime64[ns]', 'Ukončení orgánu'),
+            "od_organ": MItem('string', 'Ustavení orgánu'),
+            "do_organ": MItem('string', 'Ukončení orgánu'),
             "priorita": MItem('Int64', 'Priorita výpisu orgánů'),
             "cl_organ_base": MItem('Int64', 'Pokud je nastaveno na 1, pak při výpisu členů se nezobrazují záznamy v tabulkce zarazeni kde cl_funkce == 0. Toto chování odpovídá tomu, že v některých orgánech nejsou členové a teprve z nich se volí funkcionáři, ale přímo se volí do určité funkce.')
         }
@@ -122,6 +136,9 @@ class Organy(TypOrganu):
         _df = pd.read_csv(self.paths['organy'], sep="|", names = header.keys(), index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, name='organy')
         self.rozsir_meta(header, tabulka='organy', vlastni=False)
+
+        df['od_organ'] = format_to_datetime_and_report_skips(df, 'od_organ', '%d.%m.%Y').dt.tz_localize(self.tzn)
+        df['do_organ'] = format_to_datetime_and_report_skips(df, 'do_organ', '%d.%m.%Y').dt.tz_localize(self.tzn)
 
         return df, _df
 
@@ -132,6 +149,7 @@ class Organy(TypOrganu):
 
 
 # Tabulka definuje typ funkce v orgánu - pro každý typ orgánu jsou definovány typy funkcí. Texty názvů typu funkce se používají při výpisu namísto textů v Funkce:nazev_funkce_LL .
+# TODO: Je zde nějaká časová závislost na volebním období?
 class TypFunkce(TypOrganu):
     def __init__(self, *args, **kwargs):
         log.debug("--> TypFunkce")
@@ -144,8 +162,11 @@ class TypFunkce(TypOrganu):
 
         # Připoj Typu orgánu
         suffix="__typ_organu"
-        self.typ_funkce = pd.merge(left=self.typ_funkce, right=self.typ_organu, on="id_typ_org", suffixes=("", suffix), how='left')
-        self.typ_funkce = self.drop_by_inconsistency(self.typ_funkce, suffix, 0.1, 'typ_funkce', 'typ_organu')
+        self.typ_funkce = pd.merge(left=self.typ_funkce, right=self.typ_organu, on="id_typ_organu", suffixes=("", suffix), how='left')
+        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou.
+        # Tímto se vyhneme varování v 'drop_by_inconsistency'.
+        self.typ_funkce.drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
+        self.typ_funkce = self.drop_by_inconsistency(self.typ_funkce, suffix, 0.1, t1_name='typ_funkce', t2_name='typ_organu', t1_on='id_typ_organu', t2_on='id_typ_organu')
 
         self.df = self.typ_funkce
         self.nastav_meta()
@@ -155,7 +176,7 @@ class TypFunkce(TypOrganu):
     def nacti_typ_funkce(self):
         header = {
             'id_typ_funkce': MItem('Int64', 'Identifikator typu funkce'),
-            'id_typ_org': MItem('Int64', 'Identifikátor typu orgánu, viz TypOrganu:id_typ_org'),
+            'id_typ_organu': MItem('Int64', 'Identifikátor typu orgánu, viz TypOrganu:id_typ_organu'),
             'typ_funkce_cz': MItem('string', 'Název typu funkce v češtině'),
             'typ_funkce_en': MItem('string', 'Název typu funkce v angličtině'),
             'priorita': MItem('Int64', 'Priorita při výpisu'),
@@ -174,6 +195,7 @@ class TypFunkce(TypOrganu):
         return df, _df
 
 
+# TODO: Je zde nějaká časová závislost na volebním období?
 class Funkce(Organy, TypFunkce):
 
     def __init__(self, *args, **kwargs):
@@ -188,13 +210,19 @@ class Funkce(Organy, TypFunkce):
 
         # Připoj Orgány
         suffix = "__organy"
-        self.funkce = pd.merge(left=self.funkce, right=self.organy, on='id_organ', suffixes=("", suffix), how='left')
+        self.funkce = pd.merge(left=self.funkce, right=self.organy, on='id_organu', suffixes=("", suffix), how='left')
         self.funkce =  self.drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'organy')
 
         # Připoj Typ funkce
         suffix = "__typ_funkce"
         self.funkce = pd.merge(left=self.funkce, right=self.typ_funkce, on="id_typ_funkce", suffixes=("", suffix), how='left')
-        self.funkce = self.drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'typ_funkce')
+        self.funkce = self.drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'typ_funkce', t1_on='id_typ_funkce', t2_on='id_typ_funkce')
+
+        # Zúžení na aktuální volební období
+        podminka = (self.funkce.od_organ >= self.volebni_obdobi_od)
+        if pd.notna(self.volebni_obdobi_do):
+            podminka = podminka & (self.funkce.do_organ <= self.volebni_obdobi_do)
+        self.funkce = self.funkce[podminka]
 
         self.df = self.funkce
         self.nastav_meta()
@@ -204,7 +232,7 @@ class Funkce(Organy, TypFunkce):
     def nacti_funkce(self):
         header = {
             "id_funkce": MItem('Int64', 'Identifikátor funkce, používá se v OsobyZarazeni:id_fo'),
-            "id_organ": MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organ'),
+            "id_organu": MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organu'),
             "id_typ_funkce": MItem('Int64', 'Typ funkce, viz typ_funkce:id_typ_funkce'),
             "nazev_funkce_cz": MItem('string', 'Název funkce, pouze pro interní použití'),
             "priorita": MItem('Int64', 'Priorita výpisu')
@@ -217,6 +245,7 @@ class Funkce(Organy, TypFunkce):
         return df, _df
 
 
+# TODO: Je zde nějaká časová závislost na volebním období?
 class Osoby(PoslanciOsobyObecne):
 
     def __init__(self, *args, **kwargs):
@@ -265,7 +294,7 @@ class Osoby(PoslanciOsobyObecne):
     # Tabulka obsahuje vazby na externí systémy. Je-li typ = 1, pak jde o vazbu na evidenci senátorů na senat.cz
         header = {
             'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoba:id_osoba'),
-            'id_org': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_org'),
+            'id_organu': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organu'),
             'typ': MItem('Int64', 'Typ záznamu, viz výše. [??? Asi chtěli napsat níže ...]'),
             'obvod': MItem('Int64', 'Je-li typ = 1, pak jde o číslo senátního obvodu.'),
             'strana': MItem('string', 'Je-li typ = 1, pak jde o název volební strany/hnutí či označení nezávislého kandidáta'),
@@ -279,6 +308,7 @@ class Osoby(PoslanciOsobyObecne):
         return df, _df
 
 
+# TODO: Je zde nějaká časová závislost na volebním období?
 class OsobyZarazeni(Funkce, Organy, Osoby):
     def __init__(self, *args, **kwargs):
         log.debug("--> OsobyZarazeni")
@@ -297,16 +327,22 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
 
         # Připoj orgány
         suffix = "__organy"
-        sub1 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 0].reset_index()
-        m1 = pd.merge(left=sub1, right=self.organy, left_on='id_of', right_on='id_organ', suffixes=("", suffix), how='left')
+        sub1 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 'členství'].reset_index()
+        m1 = pd.merge(left=sub1, right=self.organy, left_on='id_of', right_on='id_organu', suffixes=("", suffix), how='left')
         m1 = self.drop_by_inconsistency(m1, suffix, 0.1, 'osoby_zarazeni', 'organy')
 
         # Připoj Funkce
-        sub2 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 1].reset_index()
+        sub2 = self.osoby_zarazeni[self.osoby_zarazeni.cl_funkce == 'funkce'].reset_index()
         m2 = pd.merge(left=sub2, right=self.funkce, left_on='id_of', right_on='id_funkce', suffixes=("", suffix), how='left')
         m2 = self.drop_by_inconsistency(m2, suffix, 0.1, 'osoby_zarazeni', 'funkce')
 
         self.osoby_zarazeni = pd.concat([m1, m2], axis=0, ignore_index=True).set_index('index').sort_index()
+
+        # Zúžení na aktuální volební období
+        podminka = (self.osoby_zarazeni.od_o >= self.volebni_obdobi_od)
+        if pd.notna(self.volebni_obdobi_do):
+            podminka = podminka & (self.osoby_zarazeni.do_o <= self.volebni_obdobi_do)
+        self.osoby_zarazeni = self.osoby_zarazeni[podminka]
 
         self.df = self.osoby_zarazeni
         self.nastav_meta()
@@ -316,7 +352,7 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
     def nacti_osoby_zarazeni(self):
         header = {
             'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba'),
-            'id_of': MItem('Int64', 'Identifikátor orgánu či funkce: pokud je zároveň nastaveno zarazeni:cl_funkce == 0, pak id_o odpovídá Organy:id_organ, pokud cl_funkce == 1, pak odpovídá Funkce:id_funkce.'),
+            'id_of': MItem('Int64', 'Identifikátor orgánu či funkce: pokud je zároveň nastaveno zarazeni:cl_funkce == 0, pak id_o odpovídá Organy:id_organu, pokud cl_funkce == 1, pak odpovídá Funkce:id_funkce.'),
             'cl_funkce__ORIG': MItem('Int64', 'Status členství nebo funce: pokud je rovno 0, pak jde o členství, pokud 1, pak jde o funkci.'),
             'od_o': MItem('string', 'datetime(year to hour) Zařazení od.'),
             'do_o':  MItem('string', 'datetime(year to hour)  Zařazení do.'),
@@ -369,8 +405,7 @@ class Poslanci(Osoby, Organy):
         self.poslanci = self.drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'pkgps')
 
         # Zúžení na volební období
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.poslanci = self.poslanci[self.poslanci.id_obdobi == id_organu_dle_volebniho_obdobi]
+        self.poslanci = self.poslanci[self.poslanci.id_organu == self.id_organu]
 
         self.df = self.poslanci
         self.nastav_meta()
@@ -383,7 +418,7 @@ class Poslanci(Osoby, Organy):
             "id_osoba": MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba'),
             "id_kraj": MItem('Int64', 'Volební kraj, viz Organy:id_organu'),
             "id_kandidatka": MItem('Int64', 'Volební strana/hnutí, viz Organy:id_organu, pouze odkazuje na stranu/hnutí, za kterou byl zvolen a nemusí mít souvislost s členstvím v poslaneckém klubu.'),
-            "id_obdobi":  MItem('Int64', 'Volební období, viz Organy:id_organu'),
+            "id_organu":  MItem('Int64', 'Volební období, viz Organy:id_organu'),
             "web": MItem('string', 'URL vlastních stránek poslance'),
             "ulice": MItem('string', 'Adresa regionální kanceláře, ulice.'),
             "obec": MItem('string', 'Adresa regionální kanceláře, obec.'),

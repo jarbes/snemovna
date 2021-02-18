@@ -7,35 +7,35 @@
 
 Snemovna(object):
 
-PoslanciOsobyObecne(Snemovna):
-TypOrganu(PoslanciOsobyObecne):
-Organy(TypOrganu):
-TypFunkce(TypOrganu):
-Funkce(Organy, TypFunkce):
-Osoby(PoslanciOsobyObecne):
-OsobyZarazeni(Funkce, Organy, Osoby):
-Poslanci(Osoby, Organy):
+poo PoslanciOsobyObecne(Snemovna):
+torg TypOrganu(PoslanciOsobyObecne):
+org Organy(TypOrganu):
+tfce TypFunkce(TypOrganu):
+fce Funkce(Organy, TypFunkce):
+os Osoby(PoslanciOsobyObecne):
+oszar OsobyZarazeni(Funkce, Organy, Osoby):
+pos Poslanci(Osoby, Organy):
 
-HlasovaniObecne(Snemovna):
-Hlasovani(HlasovaniObecne, Organy):
-ZmatecneHlasovani(Hlasovani):
-ZpochybneniHlasovani(Hlasovani):
-! ZpochybneniHlasovaniPoslancem(ZpochybneniHlasovani, Osoby):
-! OmluvyPoslance(HlasovaniObecne, Poslanci, Organy):
-HlasovaniPoslance(Hlasovani, Poslanci, Organy):
+hlo HlasovaniObecne(Snemovna):
+hl Hlasovani(HlasovaniObecne, Organy):
+zmhl ZmatecneHlasovani(Hlasovani):
+zphl ZpochybneniHlasovani(Hlasovani):
+! zphlpos ZpochybneniHlasovaniPoslancem(ZpochybneniHlasovani, Osoby):
+! opos OmluvyPoslance(HlasovaniObecne, Poslanci, Organy):
+hlpos HlasovaniPoslance(Hlasovani, Poslanci, Organy):
 
-SchuzeObecne(Snemovna):
-Schuze(SchuzeObecne, Organy):
-! BodSchuzeStav(SchuzeObecne):
-BodSchuze(BodStav):
+scho SchuzeObecne(Snemovna):
+sch Schuze(SchuzeObecne, Organy):
+!sbsch  StavBoduSchuze(SchuzeObecne):
+bsch BodSchuze(BodStav):
 
 
-! StenozaznamyObecne(Snemovna):
-! Stenozaznamy(StenoObecne, Organy):
-! BodStenozaznamu(Steno, Organy):
-! RecnikStenozaznamu(Steno, Osoby, BodSchuze):
+! stzo StenozaznamyObecne(Snemovna):
+! stz Stenozaznamy(StenoObecne, Organy):
+! bodstz BodStenozaznamu(Steno, Organy):
+! recstz RecnikStenozaznamu(Steno, Osoby, BodSchuze):
 
-Stenotexty(StenoRec, OsobyZarazeni):
+stt Stenotexty(StenoRec, OsobyZarazeni):
 
 Meta(object):
 

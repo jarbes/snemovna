@@ -24,7 +24,7 @@ class Snemovna(object):
 
         self.df = pd.DataFrame()
         self.volebni_obdobi = volebni_obdobi
-        self.id_obdobi = None
+        self.id_organu = None
         self.data_dir = data_dir
         self.url = None
         self.zip_path = None
@@ -65,7 +65,7 @@ class Snemovna(object):
                 log.error("Chyba: cesty pro stahování nebyly nastaveny!")
 
 
-    def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, inplace=False):
+    def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False):
         inconsistency = {}
         abundance = []
 
@@ -76,7 +76,8 @@ class Snemovna(object):
             difference = df[(df[short_col] != df[col]) & ~(df[short_col].isna() & df[col].isna())]
             if len(difference) > 0:
               inconsistency[short_col] = float(len(difference))/len(df)
-              log.warning(f"While merging '{t1_name}' with '{t2_name}': Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}, inconsistency ratio: {inconsistency[short_col]:.2f}")
+              on = f", left_on={t1_on} right_on={t2_on}" if ((t1_on != None) and (t2_on != None)) else ''
+              log.warning(f"While merging '{t1_name}' with '{t2_name}'{on}: Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}. Inconsistency ratio: {inconsistency[short_col]:.4f}. Example of inconsistency: '{difference.iloc[0][short_col]}' (i.e. {short_col}@{difference.index[0]}) != '{difference.iloc[0][col]}' (i.e. {col}@{difference.index[0]})")
             else:
               abundance.append(short_col)
 
