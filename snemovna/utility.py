@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from snemovna.setup_logger import log
 
 #######################################################################
-# Pomocn0 struktury pro asociovaná metadata k sloupcům tabulek
+# Pomocné struktury pro asociovaná metadata k sloupcům tabulek
 
 MItem = namedtuple('MItem', ("typ", "popis"))
 
@@ -87,7 +87,7 @@ def download_and_unzip(url, zip_file_name, data_dir):
 #######################################################################
 # Popis dat v pandas tabulkách
 
-def popis_tabulku(df):
+def popis_tabulku(df, meta=None, schovej=[]):
     """
     Popiš vlastnosti tabulky
     """
@@ -103,11 +103,14 @@ def popis_tabulku(df):
         "počet nenulových hodnot": not_null.values,
         "typ": df.dtypes.astype(str)
     }).set_index('sloupec').sort_values(by="počet unikátních hodnot", ascending=False)
-    display(out)
+
+    if meta != None:
+        for column in meta.data:
+            out[column] = meta.data[column]
 
     sloupce_s_jedinou_hodnotou = out[out["počet unikátních hodnot"] == 1]
     if len(sloupce_s_jedinou_hodnotou) == 0:
-        print("Každý sloupec obsahuje alespoň dvě hodnoty.")
+        print("Každý sloupec obsahuje alespoň dvě různé hodnoty.")
     else:
         print("Sloupce s jedinou hodnotou:")
         ret = "\n".join([f"  '{column}' má všude hodnotu '{df[column].iloc[0]}'" for column in sloupce_s_jedinou_hodnotou.index])
@@ -116,6 +119,12 @@ def popis_tabulku(df):
     print()
     print('Nulové hodnoty: ')
     popis_nulove_hodnoty(df)
+
+    if len(schovej) > 0:
+        out.drop(columns=schovej, inplace=True)
+
+    print()
+    display(out)
 
 def popis_nulove_hodnoty(df):
     """

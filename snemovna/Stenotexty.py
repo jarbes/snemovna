@@ -84,8 +84,8 @@ class StenoTexty(StenoRec, OsobyZarazeni):
         self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
 
         ## Merge osoby_zarazeni
-        poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.id_organ==172) & (self.osoby_zarazeni.cl_funkce=='členství')] # všichni poslanci
-        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.cl_funkce=='členství')]
+        poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.id_organu==self.id_organu) & (self.osoby_zarazeni.cl_funkce=='členství')] # všichni poslanci
+        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_organu_cz == "Klub") & (self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.cl_funkce=='členství')]
         self.steno_texty = pd.merge(self.steno_texty, strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
 
         ## Merge Strana

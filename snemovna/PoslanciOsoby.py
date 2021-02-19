@@ -6,7 +6,9 @@
 # Poznámka: Většina značení se drží konvencí, které byly zvoleny na uvedené stránce. Výjimkou jsou sloupce 'id_organu' (v tabulkách též jako 'id_org') a id_typ_organu (v tabulkách též jako 'id_typ_org'), pro něž jsme značení sjednotili a používéme vždy první variantu.
 
 from os import path
+
 import pandas as pd
+import numpy as np
 
 from snemovna.utility import *
 
@@ -103,16 +105,17 @@ class Organy(TypOrganu):
             self.volebni_obdobi = self.posledni_poslanecka_snemovna().od_organ.year
             log.info(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
 
-        organ = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0]
-        self.id_organu = organ.id_organu
-        self.volebni_obdobi_od = organ.od_organ
-        self.volebni_obdobi_do = organ.do_organ
+        if self.volebni_obdobi != -1:
+           organ = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0]
+           self.id_organu = organ.id_organu
+           self.volebni_obdobi_od = organ.od_organ
+           self.volebni_obdobi_do = organ.do_organ
 
-        # Zúžení na aktuální volební období
-        podminka = (self.organy.od_organ >= self.volebni_obdobi_od)
-        if pd.notna(self.volebni_obdobi_do):
-            podminka = podminka & (self.organy.do_organ <= self.volebni_obdobi_do)
-        self.organy = self.organy[podminka]
+           ## Zúžení na aktuální volební období
+           podminka = (self.organy.od_organ >= self.volebni_obdobi_od)
+           if pd.notna(self.volebni_obdobi_do):
+               podminka = podminka & (self.organy.do_organ <= self.volebni_obdobi_do)
+           self.organy = self.organy[podminka]
 
         self.df = self.organy
         self.nastav_meta()
@@ -219,10 +222,11 @@ class Funkce(Organy, TypFunkce):
         self.funkce = self.drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'typ_funkce', t1_on='id_typ_funkce', t2_on='id_typ_funkce')
 
         # Zúžení na aktuální volební období
-        podminka = (self.funkce.od_organ >= self.volebni_obdobi_od)
-        if pd.notna(self.volebni_obdobi_do):
-            podminka = podminka & (self.funkce.do_organ <= self.volebni_obdobi_do)
-        self.funkce = self.funkce[podminka]
+        if self.volebni_obdobi != -1:
+            podminka = (self.funkce.od_organ >= self.volebni_obdobi_od)
+            if pd.notna(self.volebni_obdobi_do):
+                podminka = podminka & (self.funkce.do_organ <= self.volebni_obdobi_do)
+            self.funkce = self.funkce[podminka]
 
         self.df = self.funkce
         self.nastav_meta()
@@ -262,6 +266,10 @@ class Osoby(PoslanciOsobyObecne):
         self.osoba_extra, self.osoba_extra = self.nacti_osoba_extra()
         self.osoby, self._osoby = self.nacti_osoby()
 
+        #suffix='__osoba_extra'
+        #self.osoby = pd.merge(left=self.osoby, right=self.osoba_extra, on="id_osoba", how="left", suffixes=('', suffix))
+        #self.drop_by_inconsistency(self.osoby, suffix, 0.1, 'hlasovani', 'osoba_extra', inplace=True)
+
         self.df = self.osoby
         self.nastav_meta()
 
@@ -288,6 +296,12 @@ class Osoby(PoslanciOsobyObecne):
         df["pohlavi"] = mask_by_values(df.pohlavi__ORIG, {'M': "muž", 'Z': 'žena', 'Ž': 'žena'}).astype('string')
         self.meta['pohlavi'] = dict(popis='Pohlaví.', tabulka='osoby', vlastni=True)
 
+        df['narozeni'] = pd.to_datetime(df['narozeni'], format='%Y-%m-%d').dt.tz_localize(self.tzn)
+        df['narozeni'] = df.narozeni.mask(df.narozeni == '1900-01-01', pd.NaT)
+
+        df['umrti'] = pd.to_datetime(df['umrti'], format='%Y-%m-%d').dt.tz_localize(self.tzn)
+        df['zmena'] = pd.to_datetime(df['zmena'], format='%Y-%m-%d').dt.tz_localize(self.tzn)
+
         return df, _df
 
     def nacti_osoba_extra(self):
@@ -312,9 +326,8 @@ class Osoby(PoslanciOsobyObecne):
 class OsobyZarazeni(Funkce, Organy, Osoby):
     def __init__(self, *args, **kwargs):
         log.debug("--> OsobyZarazeni")
-        super(OsobyZarazeni, self).__init__(*args, **kwargs)
 
-        #self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
+        super(OsobyZarazeni, self).__init__(*args, **kwargs)
 
         self.paths['osoby_zarazeni'] = f"{self.data_dir}/zarazeni.unl"
 
@@ -338,11 +351,22 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
 
         self.osoby_zarazeni = pd.concat([m1, m2], axis=0, ignore_index=True).set_index('index').sort_index()
 
-        # Zúžení na aktuální volební období
-        podminka = (self.osoby_zarazeni.od_o >= self.volebni_obdobi_od)
-        if pd.notna(self.volebni_obdobi_do):
-            podminka = podminka & (self.osoby_zarazeni.do_o <= self.volebni_obdobi_do)
-        self.osoby_zarazeni = self.osoby_zarazeni[podminka]
+        ## Zúžení na aktuální volební období
+        if self.volebni_obdobi != -1:
+            interval_start = np.maximum(self.osoby_zarazeni.od_o, self.volebni_obdobi_od)
+            interval_end = np.minimum(self.osoby_zarazeni.do_o, self.volebni_obdobi_do)
+
+            # TODO: Co kdyz je interval_start null ?
+            # TODO: Jak je to s konci intervalů?
+            # TODO: Kdy použít od_f místo od_o, resp. do_f místo do_o?
+            assert self.osoby_zarazeni[interval_start.isna()].size == 0
+
+            if pd.isna(self.volebni_obdobi_do):
+                podminka = ((interval_start <= self.osoby_zarazeni.do_o) |  (self.osoby_zarazeni.do_o.isna()))
+            else:
+              podminka = ((interval_start <= interval_end) | ((interval_start <= self.volebni_obdobi_do) & (self.osoby_zarazeni.do_o.isna())))
+
+            self.osoby_zarazeni= self.osoby_zarazeni[podminka]
 
         self.df = self.osoby_zarazeni
         self.nastav_meta()
@@ -378,7 +402,7 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
         return df, _df
 
 
-class Poslanci(Osoby, Organy):
+class Poslanci(OsobyZarazeni, Organy):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Poslanci")
@@ -394,7 +418,11 @@ class Poslanci(Osoby, Organy):
         self.pkgps, self._pkgps = self.nacti_pkgps()
         self.poslanci, self._poslanci = self.nacti_poslance()
 
-        # Připoj informace o osobe
+        # Zúžení na volební období
+        if self.volebni_obdobi != -1:
+            self.poslanci = self.poslanci[self.poslanci.id_organu == self.id_organu]
+
+        # Připojení informace o osobě, např. jméno a příjmení
         suffix = "__osoby"
         self.poslanci = pd.merge(left=self.poslanci, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
         self.poslanci = self.drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'osoby')
@@ -402,10 +430,18 @@ class Poslanci(Osoby, Organy):
         # Připoj informace o kanceláři
         suffix = "__pkgps"
         self.poslanci = pd.merge(left=self.poslanci, right=self.pkgps, on='id_poslanec', suffixes = ("", suffix), how='left')
-        self.poslanci = self.drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'pkgps')
+        self.drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'pkgps', inplace=True)
 
-        # Zúžení na volební období
-        self.poslanci = self.poslanci[self.poslanci.id_organu == self.id_organu]
+        ## Merge osoby_zarazeni
+        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(self.poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_organu_cz == "Klub") & (self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.cl_funkce=='členství')].copy()
+        strany.rename(columns={'id_organu': 'id_strany', 'nazev_organu_cz': 'nazev_strany_cz', 'zkratka': 'zkratka_strany'}, inplace=True)
+        self.poslanci = pd.merge(self.poslanci, strany[['id_osoba', 'id_strany', 'nazev_strany_cz', 'zkratka_strany']], on='id_osoba', how="left")
+        self.poslanci = self.drop_by_inconsistency(self.poslanci, suffix, 0.1, 'poslanci', 'osoby_zarazeni')
+        self.meta['id_strany'] = {"popis": 'Identifikátor strany, do které je aktuálně poslanec zařazen, viz Organy:id_organu', 'tabulka': 'df', 'vlastni': True}
+        self.meta['nazev_strany_cz'] = {"popis": 'Název strany, do které je aktuálně poslanec zařazen, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
+        self.meta['zkratka_strany'] = {"popis": 'Zkratka strany, do které je aktuálně poslanec zařazen, viz Organy:zkratka', 'tabulka': 'df', 'vlastni': True}
+
+        to_drop = ['']
 
         self.df = self.poslanci
         self.nastav_meta()

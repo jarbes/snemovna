@@ -12,9 +12,47 @@ from snemovna.setup_logger import log
 
 
 class Snemovna(object):
-    '''
-    Základní třída, která především nastavuje cesty pro stažení tabulek
-    '''
+    """Základní třída, která zajišťuje sdílené proměnné a metody pro dětské třídy.
+
+    Attributes
+    ----------
+    df : pandas DataFrame
+        základní tabulka dané třídy
+    meta : třída Meta
+        metadata všech dostupných sloupců (napříč načtenými tabulkami)
+    volební období : Int64
+        volební období sněmovny
+    id_organu : Int64
+        id sněmovny, defaultně None, hodnota se nastaví až v dětské třídě Orgány
+    tzn : pytz formát
+        časová zóna
+    paths : list of strings
+        cesty k souborům načtených tabulek
+    data_dir : string
+        adresář, do kterého se ukládají data
+    url : string
+        url, na které jsou pro danou třídu zazipované tabulky
+    zip_path
+        lokální cesta k zazipovaným tabulkám
+    file_name
+        jméno zip souboru (basename)
+
+    Methods
+    -------
+    nastav_datovy_zdroj(url)
+        Nastaví cesty k souborům s tabulkami
+    missing_files()
+        Určí chybějící datové soubory
+    stahni_data()
+        Stáhne data z archivu PS
+    drop_by_inconsistency (df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False)
+        Prozkoumá tabulku a oveří konzistenci dat po mergování
+    nastav_meta()
+        Nastaví meta informace k sloupcům dle aktuálního stavu tabuky df
+    rozsir_meta(header, tabulka=None, vlastni=None)
+        Rozšíří meta informace k sloupcům dle hlavičky konkrétní tabulky
+    """
+
     tzn = pytz.timezone('Europe/Prague')
 
     def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=True, *args, **kwargs):
@@ -38,6 +76,9 @@ class Snemovna(object):
         self.paths = {}
 
         log.debug("<-- Snemovna")
+
+    def popis(self):
+        popis_tabulku(self.df, self.meta, schovej=['aktivni'])
 
     def nastav_datovy_zdroj(self, url):
         a = urlparse(url)
