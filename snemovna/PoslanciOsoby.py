@@ -77,7 +77,6 @@ class TypOrganu(PoslanciOsobyObecne):
 
 # TODO: Je zde nějaká časová závislost na volebním období?
 class Organy(TypOrganu):
-
     def __init__(self,  *args, **kwargs):
         log.debug("--> Organy")
 
@@ -101,21 +100,20 @@ class Organy(TypOrganu):
         self.organy.drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
         self.organy = self.drop_by_inconsistency(self.organy, suffix, 0.1, 'organy', 'typ_organu')
 
+        # Ověř, že merge operace nezměnily počet řádků.
+        assert self.organy.index.size == self._organy.index.size
+
+        # Nastav volebn9 období, pokud chybí
         if self.volebni_obdobi == None:
-            self.volebni_obdobi = self.posledni_poslanecka_snemovna().od_organ.year
+            self.volebni_obdobi = self._posledni_snemovna().od_organ.year
             log.info(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
 
         if self.volebni_obdobi != -1:
-           organ = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0]
-           self.id_organu = organ.id_organu
-           self.volebni_obdobi_od = organ.od_organ
-           self.volebni_obdobi_do = organ.do_organ
+            x = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)]
+            if len(x) == 1:
+                self.snemovna = x.iloc[0]
 
-           ## Zúžení na aktuální volební období
-           podminka = (self.organy.od_organ >= self.volebni_obdobi_od)
-           if pd.notna(self.volebni_obdobi_do):
-               podminka = podminka & (self.organy.do_organ <= self.volebni_obdobi_do)
-           self.organy = self.organy[podminka]
+        self.zuzeni()
 
         self.df = self.organy
         self.nastav_meta()
@@ -145,10 +143,82 @@ class Organy(TypOrganu):
 
         return df, _df
 
-    def posledni_poslanecka_snemovna(self):
+    def zuzeni(self):
+        if self.volebni_obdobi != -1:
+            ids_snemovnich_organu = self._find_children_ids([], 'id_organu', self.organy, 'organ_id_organu', [self.snemovna.id_organu], 0)
+
+            # TODO: Kdy použít od_f místo od_o, resp. do_f místo do_o?
+            interval_start = self.organy.od_organ\
+                .mask(self.organy.od_organ.isna(), self.snemovna.od_organ)\
+                .mask(~self.organy.od_organ.isna(), np.maximum(self.organy.od_organ, self.snemovna.od_organ))
+
+            # Pozorování: volebni_obdobi_od není nikdy NaT => interval_start není nikdy NaT
+            if pd.isna(self.snemovna.do_organ): # příznak posledního volebního období
+                podminka_interval = (
+                    (interval_start.dt.date <= self.organy.do_organ.dt.date) # Nutná podmínka pro True: (interval_start != NaT, splněno vždy) a (do_organ != NaT)
+                    |  (self.organy.do_organ.isna()) # Nutná podmínka pro True: (interval_start != NaT, splněno vždy) a (do_organ == NaT)
+                )
+            else: # Pozorování: předchozí volební období => interval_end není nikdy NaT
+                interval_end = self.organy.do_organ\
+                    .mask(self.organy.do_organ.isna(), self.snemovna.do_organ)\
+                    .mask(~self.organy.do_organ.isna(), np.minimum(self.organy.do_organ, self.snemovna.do_organ))
+                podminka_interval = (interval_start.dt.date <= interval_end.dt.date)
+
+            ids_jinych_snemoven = []
+
+            x = self._predchozi_snemovna()
+            if x is not None:
+                ids_jinych_snemoven.append(x.id_organu)
+
+            x = self._nasledujici_snemovna()
+            if x is not None:
+                ids_jinych_snemoven.append(x.id_organu)
+
+            ids_jinych_snemovnich_organu = self._find_children_ids(ids_jinych_snemoven, 'id_organu', self.organy, 'organ_id_organu', ids_jinych_snemoven, 0)
+            podminka_nepatri_do_jine_snemovny = ~self.organy.id_organu.isin(ids_jinych_snemovnich_organu)
+
+            self.organy = self.organy[
+                (self.organy.id_organu.isin(ids_snemovnich_organu) == True)
+                | (podminka_interval & podminka_nepatri_do_jine_snemovny)
+            ]
+
+    def _posledni_snemovna(self):
         p =  self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.do_organ.isna())].sort_values(by=["od_organ"])
-        assert len(p) == 1
-        return p.iloc[-1]
+        if len(p) == 1:
+            return p.iloc[0]
+        else:
+            return None
+
+    def _predchozi_snemovna(self):
+        snemovny = self.organy[self.organy.nazev_organu_cz == 'Poslanecká sněmovna'].sort_values(by="do_organ").copy()
+        snemovny['id_predchozi_snemovny'] = snemovny.id_organu.shift(1)
+        idx = snemovny[snemovny.id_organu == self.snemovna.id_organu].iloc[0].id_predchozi_snemovny
+        p = snemovny[snemovny.id_organu == idx]
+        assert len(p) <= 1
+        if len(p) == 1:
+          return p.iloc[0]
+        else:
+          return None
+
+    def _nasledujici_snemovna(self):
+        snemovny = self.organy[self.organy.nazev_organu_cz == 'Poslanecká sněmovna'].sort_values(by="do_organ").copy()
+        snemovny['id_nasledujici_snemovny'] = snemovny.id_organu.shift(-1)
+        idx = snemovny[snemovny.id_organu == self.snemovna.id_organu].iloc[0].id_nasledujici_snemovny
+        p = snemovny[snemovny.id_organu == idx]
+        assert len(p) <= 1
+        if len(p) == 1:
+          return p.iloc[0]
+        else:
+          return None
+
+    def _find_children_ids(self, ids, id_field, df, parent_field, parent_ids, level):
+        children = df[df[parent_field].isin(parent_ids)]
+        if len(children) > 0:
+            for idx, child in children.iterrows():
+                #print(' '*level, ' ', child.nazev_organu_cz)
+                ids.append(child[id_field])
+                ids = self._find_children_ids(ids, id_field, df, parent_field, [child.id_organu], level+1)
+        return ids
 
 
 # Tabulka definuje typ funkce v orgánu - pro každý typ orgánu jsou definovány typy funkcí. Texty názvů typu funkce se používají při výpisu namísto textů v Funkce:nazev_funkce_LL .
@@ -170,6 +240,9 @@ class TypFunkce(TypOrganu):
         # Tímto se vyhneme varování v 'drop_by_inconsistency'.
         self.typ_funkce.drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
         self.typ_funkce = self.drop_by_inconsistency(self.typ_funkce, suffix, 0.1, t1_name='typ_funkce', t2_name='typ_organu', t1_on='id_typ_organu', t2_on='id_typ_organu')
+
+        # Ověř, že merge operace nezměnily počet řádků.
+        assert self.typ_funkce.index.size == self._typ_funkce.index.size
 
         self.df = self.typ_funkce
         self.nastav_meta()
@@ -221,11 +294,28 @@ class Funkce(Organy, TypFunkce):
         self.funkce = pd.merge(left=self.funkce, right=self.typ_funkce, on="id_typ_funkce", suffixes=("", suffix), how='left')
         self.funkce = self.drop_by_inconsistency(self.funkce, suffix, 0.1, 'funkce', 'typ_funkce', t1_on='id_typ_funkce', t2_on='id_typ_funkce')
 
-        # Zúžení na aktuální volební období
+        # Ověř, že merge operace nezměnily počet řádků.
+        assert self.funkce.index.size == self._funkce.index.size
+
+        ## Zúžení na aktuální volební období
+        #if self.volebni_obdobi != -1:
+        #    podminka = (self.funkce.od_organ >= self.volebni_obdobi_od)
+        #    if pd.notna(self.volebni_obdobi_do):
+        #        podminka = podminka & (self.funkce.do_organ <= self.volebni_obdobi_do)
+        ## Zúžení na aktuální volební období
         if self.volebni_obdobi != -1:
-            podminka = (self.funkce.od_organ >= self.volebni_obdobi_od)
-            if pd.notna(self.volebni_obdobi_do):
-                podminka = podminka & (self.funkce.do_organ <= self.volebni_obdobi_do)
+            interval_start = np.maximum(self.funkce.od_organ, self.volebni_obdobi_od)
+            interval_end = np.minimum(self.funkce.do_organ, self.volebni_obdobi_do)
+
+            # TODO: Co kdyz je interval_start null ?
+            # TODO: Jak je to s konci intervalů?
+            # TODO: Kdy použít od_f místo od_o, resp. do_f místo do_o?
+
+            if pd.isna(self.volebni_obdobi_do): # poslední volební období
+                podminka = ((interval_start.dt.date <= self.funkce.do_organ.dt.date) |  (self.funkce.do_organ.isna()))
+            else: # předchozí volební období
+              podminka = ((interval_start.dt.date <= interval_end.dt.date) | ((interval_start.dt.date <= self.volebni_obdobi_do) & (self.funkce.do_organ.isna())))
+
             self.funkce = self.funkce[podminka]
 
         self.df = self.funkce
@@ -351,6 +441,9 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
 
         self.osoby_zarazeni = pd.concat([m1, m2], axis=0, ignore_index=True).set_index('index').sort_index()
 
+        # Ověř, že merge operace nezměnily počet řádků.
+        assert self.osoby_zarazeni.index.size == self._osoby_zarazeni.index.size
+
         ## Zúžení na aktuální volební období
         if self.volebni_obdobi != -1:
             interval_start = np.maximum(self.osoby_zarazeni.od_o, self.volebni_obdobi_od)
@@ -361,10 +454,10 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
             # TODO: Kdy použít od_f místo od_o, resp. do_f místo do_o?
             assert self.osoby_zarazeni[interval_start.isna()].size == 0
 
-            if pd.isna(self.volebni_obdobi_do):
-                podminka = ((interval_start <= self.osoby_zarazeni.do_o) |  (self.osoby_zarazeni.do_o.isna()))
-            else:
-              podminka = ((interval_start <= interval_end) | ((interval_start <= self.volebni_obdobi_do) & (self.osoby_zarazeni.do_o.isna())))
+            if pd.isna(self.volebni_obdobi_do): # poslední volební období
+                podminka = ((interval_start.dt.date <= self.osoby_zarazeni.do_o.dt.date) |  (self.osoby_zarazeni.do_o.isna()))
+            else: # předchozí volební období
+              podminka = ((interval_start.dt.date <= interval_end.dt.date) | ((interval_start.dt.date <= self.volebni_obdobi_do) & (self.osoby_zarazeni.do_o.isna())))
 
             self.osoby_zarazeni= self.osoby_zarazeni[podminka]
 
@@ -378,10 +471,10 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
             'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba'),
             'id_of': MItem('Int64', 'Identifikátor orgánu či funkce: pokud je zároveň nastaveno zarazeni:cl_funkce == 0, pak id_o odpovídá Organy:id_organu, pokud cl_funkce == 1, pak odpovídá Funkce:id_funkce.'),
             'cl_funkce__ORIG': MItem('Int64', 'Status členství nebo funce: pokud je rovno 0, pak jde o členství, pokud 1, pak jde o funkci.'),
-            'od_o': MItem('string', 'datetime(year to hour) Zařazení od.'),
-            'do_o':  MItem('string', 'datetime(year to hour)  Zařazení do.'),
-            'od_f': MItem('string', 'Mandát od. Nemusí být vyplněno a pokud je vyplněno, pak určuje datum vzniku mandátu a zarazeni:od_o obsahuje datum volby.'),
-            'do_f': MItem('string', 'Mandát do. Nemusí být vyplněno a pokud je vyplněno, určuje datum konce mandátu a zarazeni:do_o obsahuje datum ukončení zařazení.')
+            'od_o': MItem('string', 'Zařazení od. [year to hour]'),
+            'do_o':  MItem('string', 'Zařazení do. [year to hour]'),
+            'od_f': MItem('string', 'Mandát od. Nemusí být vyplněno a pokud je vyplněno, pak určuje datum vzniku mandátu a OsobyZarazeni:od_o obsahuje datum volby. [date]'),
+            'do_f': MItem('string', 'Mandát do. Nemusí být vyplněno a pokud je vyplněno, určuje datum konce mandátu a OsobyZarazeni:do_o obsahuje datum ukončení zařazení. [date]')
         }
 
         _df = pd.read_csv(self.paths['osoby_zarazeni'], sep="|", names = header.keys(), index_col=False, encoding='cp1250')
@@ -418,10 +511,6 @@ class Poslanci(OsobyZarazeni, Organy):
         self.pkgps, self._pkgps = self.nacti_pkgps()
         self.poslanci, self._poslanci = self.nacti_poslance()
 
-        # Zúžení na volební období
-        if self.volebni_obdobi != -1:
-            self.poslanci = self.poslanci[self.poslanci.id_organu == self.id_organu]
-
         # Připojení informace o osobě, např. jméno a příjmení
         suffix = "__osoby"
         self.poslanci = pd.merge(left=self.poslanci, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
@@ -441,7 +530,12 @@ class Poslanci(OsobyZarazeni, Organy):
         self.meta['nazev_strany_cz'] = {"popis": 'Název strany, do které je aktuálně poslanec zařazen, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
         self.meta['zkratka_strany'] = {"popis": 'Zkratka strany, do které je aktuálně poslanec zařazen, viz Organy:zkratka', 'tabulka': 'df', 'vlastni': True}
 
-        to_drop = ['']
+        # Ověř, že merge operace nezměnily počet řádků.
+        assert self.poslanci.index.size == self._poslanci.index.size
+
+        # Zúžení na volební období
+        if self.volebni_obdobi != -1:
+            self.poslanci = self.poslanci[self.poslanci.id_organu == self.id_organu]
 
         self.df = self.poslanci
         self.nastav_meta()

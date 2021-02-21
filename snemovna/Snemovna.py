@@ -22,8 +22,8 @@ class Snemovna(object):
         metadata všech dostupných sloupců (napříč načtenými tabulkami)
     volební období : Int64
         volební období sněmovny
-    id_organu : Int64
-        id sněmovny, defaultně None, hodnota se nastaví až v dětské třídě Orgány
+    snemovna : Int64
+        objekt obsahujici data aktualni snemovny, defaultně None, hodnota se nastaví až v dětské třídě Orgány
     tzn : pytz formát
         časová zóna
     paths : list of strings
@@ -62,7 +62,7 @@ class Snemovna(object):
 
         self.df = pd.DataFrame()
         self.volebni_obdobi = volebni_obdobi
-        self.id_organu = None
+        self.snemovna = None
         self.data_dir = data_dir
         self.url = None
         self.zip_path = None
