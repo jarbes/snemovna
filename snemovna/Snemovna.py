@@ -1,3 +1,6 @@
+
+from collections.abc import MutableSequence
+
 import os
 from os import path
 from urllib.parse import urlparse
@@ -11,13 +14,47 @@ from snemovna.utility import *
 from snemovna.setup_logger import log
 
 
-class Snemovna(object):
+class MySeries(pd.Series):
+    @property
+    def _constructor(self):
+        return MySeries
+
+    @property
+    def _constructor_expanddim(self):
+        return MyDataFrame
+
+
+class MyDataFrame(pd.DataFrame):
+    # temporary properties
+    _internal_names = pd.DataFrame._internal_names
+    _internal_names_set = set(_internal_names)
+
+    # normal properties
+    _metadata = []
+
+    def __init__(self, *args, **kwargs):
+        super(MyDataFrame, self).__init__(*args, **kwargs)
+
+    @property
+    def _constructor(self):
+        return MyDataFrame
+
+    @property
+    def _constructor_sliced(self):
+        return MySeries
+
+
+class Snemovna(MyDataFrame):
     """Základní třída, která zajišťuje sdílené proměnné a metody pro dětské třídy.
 
     Attributes
     ----------
     df : pandas DataFrame
         základní tabulka dané třídy
+    p : dict
+        cesty k souborům načtených tabulek
+    t : dict
+        načtené tabulky
     meta : třída Meta
         metadata všech dostupných sloupců (napříč načtenými tabulkami)
     volební období : Int64
@@ -26,8 +63,6 @@ class Snemovna(object):
         objekt obsahujici data aktualni snemovny, defaultně None, hodnota se nastaví až v dětské třídě Orgány
     tzn : pytz formát
         časová zóna
-    paths : list of strings
-        cesty k souborům načtených tabulek
     data_dir : string
         adresář, do kterého se ukládají data
     url : string
@@ -53,16 +88,24 @@ class Snemovna(object):
         Rozšíří meta informace k sloupcům dle hlavičky konkrétní tabulky
     """
 
-    tzn = pytz.timezone('Europe/Prague')
-
     def __init__(self, volebni_obdobi=None, data_dir='./data/', stahni=True, *args, **kwargs):
         log.debug("--> Snemovna")
 
-        super().__init__(*args, **kwargs)
+        super(Snemovna, self).__init__(*args, **kwargs)
+
+        self._metadata = [
+            "df", "meta", 'paths', 'tbl',
+            "volební období", "snemovna",
+            "tzn",
+            "data_dir", "url", "zip_path", "file_name", 'stahni'
+        ]
 
         self.df = pd.DataFrame()
+        self.paths = {}
+        self.tbl = {}
         self.volebni_obdobi = volebni_obdobi
         self.snemovna = None
+        self.tzn = pytz.timezone('Europe/Prague')
         self.data_dir = data_dir
         self.url = None
         self.zip_path = None
@@ -73,9 +116,15 @@ class Snemovna(object):
             dtypes=dict(popis='string', tabulka='string', vlastni='bool', aktivni='bool'),
             defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
         )
-        self.paths = {}
 
         log.debug("<-- Snemovna")
+
+    def nastav_dataframe(self, frame):
+        self.df = frame
+        self.drop(index=self.index, inplace=True)
+        self.drop(columns=self.columns, inplace=True)
+        for col in frame.columns:
+            self[col] = frame[col].astype(frame[col].dtype)
 
     def popis(self):
         popis_tabulku(self.df, self.meta, schovej=['aktivni'])
@@ -152,3 +201,4 @@ class Snemovna(object):
     def rozsir_meta(self, header, tabulka=None, vlastni=None):
         for k, i in header.items():
             self.meta[k] = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
+

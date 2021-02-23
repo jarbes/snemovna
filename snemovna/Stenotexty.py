@@ -196,7 +196,7 @@ class StenoTexty(StenoRec, OsobyZarazeni):
             'je_poznamka': bool,
             'cas': 'string',
             'typ_casu': 'string',
-            #'date': 'datetime64[ns]'
+            #'date': 'string'
         }
         df = pretypuj(df, header1, 'steno_texty [stage1]')
 
