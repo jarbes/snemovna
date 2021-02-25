@@ -1,6 +1,4 @@
 
-from collections.abc import MutableSequence
-
 import os
 from os import path
 from urllib.parse import urlparse
@@ -9,39 +7,9 @@ import pytz
 
 import pandas as pd
 
+from snemovna.Helpers import *
 from snemovna.utility import *
-
 from snemovna.setup_logger import log
-
-
-class MySeries(pd.Series):
-    @property
-    def _constructor(self):
-        return MySeries
-
-    @property
-    def _constructor_expanddim(self):
-        return MyDataFrame
-
-
-class MyDataFrame(pd.DataFrame):
-    # temporary properties
-    _internal_names = pd.DataFrame._internal_names
-    _internal_names_set = set(_internal_names)
-
-    # normal properties
-    _metadata = []
-
-    def __init__(self, *args, **kwargs):
-        super(MyDataFrame, self).__init__(*args, **kwargs)
-
-    @property
-    def _constructor(self):
-        return MyDataFrame
-
-    @property
-    def _constructor_sliced(self):
-        return MySeries
 
 
 class Snemovna(MyDataFrame):
@@ -125,6 +93,7 @@ class Snemovna(MyDataFrame):
         self.drop(columns=self.columns, inplace=True)
         for col in frame.columns:
             self[col] = frame[col].astype(frame[col].dtype)
+        self.nastav_meta()
 
     def popis(self):
         popis_tabulku(self.df, self.meta, schovej=['aktivni'])
@@ -196,7 +165,7 @@ class Snemovna(MyDataFrame):
 
         for c in self.df.columns:
             if c not in self.meta:
-                log.warning(f"Pro sloupec {c} nebyla nalezena metadata!")
+                log.warning(f"Pro sloupec '{c}' nebyla nalezena metadata!")
 
     def rozsir_meta(self, header, tabulka=None, vlastni=None):
         for k, i in header.items():

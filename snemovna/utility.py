@@ -4,66 +4,15 @@ from pathlib import Path
 from os import listdir #, path # TODO: asi stačí buď jen Path, nebo path
 import zipfile
 
-from collections import namedtuple
-
 import pandas as pd
 from IPython.display import display
 #import numpy as np
 
 import plotly.graph_objects as go
 
+from snemovna.Helpers import *
 from snemovna.setup_logger import log
 
-#######################################################################
-# Pomocné struktury pro asociovaná metadata k sloupcům tabulek
-
-MItem = namedtuple('MItem', ("typ", "popis"))
-
-class Meta(object):
-    def __init__(self, columns=[], defaults={}, dtypes={}, index_name='name'):
-        self.defaults = defaults
-        c = set([index_name]).union(columns).union(defaults.keys()).union(dtypes.keys())
-        self.data = pd.DataFrame([], columns=c).set_index(index_name)
-
-    def __init__(self, defaults={}, dtypes={}, index_name='name'):
-        self.defaults = defaults
-        columns = set([index_name]).union(defaults.keys()).union(dtypes.keys())
-        self.data = pd.DataFrame([], columns=columns).set_index(index_name)
-
-        for key, dtype in dtypes.items():
-            self.data[key] = self.data[key].astype(dtype)
-
-    def __getitem__(self, name):
-        found = self.data[self.data.index.isin([name])]
-        if len(found) > 0:
-            return found.iloc[0]
-        else:
-            return None
-
-    def __setitem__(self, name, val):
-        found = self.data[self.data.index.isin([name])]
-        if len(found) > 0:
-            for k, i in val.items():
-                self.data.loc[self.data.index == name, k] = i
-        else:
-            missing_keys = self.defaults.keys() - val.keys()
-            for k in missing_keys:
-                val[k] = self.defaults[k]
-            self.data = self.data.append(pd.Series(val.values(), index=val.keys(), name=name))
-
-    def __contains__(self, name):
-        found = self.data[self.data.index.isin([name])]
-        if len(found) > 0:
-            return True
-        else:
-            return False
-
-    def __iter__(self):
-        for c in self.data.index:
-            yield c
-
-    def __str__(self):
-          return str(self.data)
 
 #######################################################################
 # Stahování dat
@@ -239,3 +188,25 @@ def groupby_bar(df, by, xlabel=None, ylabel=None, title=''):
     fig.update_yaxes(title_text=ylabel)
     fig.update_layout(title=title, width=600, height=400)
     return fig
+
+
+#######################################################################
+# Struktury uložené v pandas tabulkách
+
+#def find_children_ids(ids, id_field, df, parent_field, parent_ids, level=0):
+#    children = df[df[parent_field].isin(parent_ids)]
+#    if len(children) > 0:
+#        for idx, child in children.iterrows():
+#            #print(' '*level, ' ', child.nazev_organu_cz)
+#            ids.append(child[id_field])
+#            ids = find_children_ids(ids, id_field, df, parent_field, [child[id_field]], level+1)
+#    return ids
+
+def expand_hierarchy(df, id_field, parent_field, to_expand):
+    children = df[df[parent_field].isin(to_expand)]
+    if len(children) > 0:
+        new_to_expand = [child[id_field] for idx, child in children.iterrows()]
+        return to_expand + expand_hierarchy(df, id_field, parent_field, new_to_expand)
+    else:
+        return to_expand
+

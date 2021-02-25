@@ -11,9 +11,7 @@ import pandas as pd
 import numpy as np
 
 from snemovna.utility import *
-
-from snemovna.Snemovna import Snemovna
-
+from snemovna.Snemovna import *
 from snemovna.setup_logger import log
 
 
@@ -89,17 +87,13 @@ class Organy(TypOrganu):
 
         self.tbl['organy'], self.tbl['_organy'] = self.nacti_organy()
 
-        organy = self.tbl['organy']
-        typ_organu = self.tbl['typ_organu']
-
         # Připoj Typu orgánu
         suffix = "__typ_organu"
-        organy = pd.merge(left=organy, right=typ_organu, left_on="id_typ_organu", right_on="id_typ_organu", suffixes=("",suffix), how='left')
-
-        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a pro analýzu k ničemu nejsou.
-        # Tímto se vyhneme varování funkce 'drop_by_inconsistency
-        organy.drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
-        organy = self.drop_by_inconsistency(organy, suffix, 0.1, 'organy', 'typ_organu')
+        self.tbl['organy'] = pd.merge(left=self.tbl['organy'], right=self.tbl['typ_organu'], on="id_typ_organu", suffixes=("",suffix), how='left')
+        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš k ničemu nejsou.
+        # Tímto se vyhneme varování funkce 'drop_by_inconsistency.
+        self.tbl['organy'].drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
+        self.tbl['organy'] = self.drop_by_inconsistency(self.tbl['organy'], suffix, 0.1, 'organy', 'typ_organu')
 
         # Nastav volební období, pokud chybí
         if self.volebni_obdobi == None:
@@ -107,13 +101,17 @@ class Organy(TypOrganu):
             log.info(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
 
         if self.volebni_obdobi != -1:
-            x = organy[(organy.nazev_organu_cz == 'Poslanecká sněmovna') & (organy.od_organ.dt.year == self.volebni_obdobi)]
+            x = self.tbl['organy'][
+                (self.tbl['organy'].nazev_organu_cz == 'Poslanecká sněmovna')
+                & (self.tbl['organy'].od_organ.dt.year == self.volebni_obdobi)
+            ]
             if len(x) == 1:
                 self.snemovna = x.iloc[0]
+            else:
+                log.error('Bylo nalezeno více sněmoven pro dané volební období!')
+                raise ValueError
 
-        organy = self.vyber_platne_organy(organy)
-
-        self.tbl['organy'] = organy
+        self.tbl['organy'] = self.vyber_platne_organy()
         self.nastav_dataframe(self.tbl['organy'])
 
         log.debug("<-- Organy")
@@ -141,11 +139,15 @@ class Organy(TypOrganu):
 
         return df, _df
 
-    def vyber_platne_organy(self, df):
+    def vyber_platne_organy(self, df=None):
+        if df == None:
+            df = self.tbl['organy']
+
         if self.volebni_obdobi == -1:
             return df
 
-        ids_snemovnich_organu = self._find_children_ids([], 'id_organu', df, 'organ_id_organu', [self.snemovna.id_organu], 0)
+        #ids_snemovnich_organu = find_children_ids([], 'id_organu', df, 'organ_id_organu', [self.snemovna.id_organu], 0)
+        ids_snemovnich_organu = expand_hierarchy(df, 'id_organu', 'organ_id_organu', [self.snemovna.id_organu])
 
         # TODO: Kdy použít od_f místo od_o, resp. do_f místo do_o?
         interval_start = df.od_organ\
@@ -174,7 +176,8 @@ class Organy(TypOrganu):
         if x is not None:
             ids_jinych_snemoven.append(x.id_organu)
 
-        ids_jinych_snemovnich_organu = self._find_children_ids(ids_jinych_snemoven, 'id_organu', df, 'organ_id_organu', ids_jinych_snemoven, 0)
+        #ids_jinych_snemovnich_organu = find_children_ids(ids_jinych_snemoven, 'id_organu', df, 'organ_id_organu', ids_jinych_snemoven, 0)
+        ids_jinych_snemovnich_organu = expand_hierarchy(df, 'id_organu', 'organ_id_organu', ids_jinych_snemoven)
         podminka_nepatri_do_jine_snemovny = ~df.id_organu.isin(ids_jinych_snemovnich_organu)
 
         df = df[
@@ -230,15 +233,6 @@ class Organy(TypOrganu):
         else:
           return None
 
-    def _find_children_ids(self, ids, id_field, df, parent_field, parent_ids, level):
-        children = df[df[parent_field].isin(parent_ids)]
-        if len(children) > 0:
-            for idx, child in children.iterrows():
-                #print(' '*level, ' ', child.nazev_organu_cz)
-                ids.append(child[id_field])
-                ids = self._find_children_ids(ids, id_field, df, parent_field, [child.id_organu], level+1)
-        return ids
-
 
 # Tabulka definuje typ funkce v orgánu - pro každý typ orgánu jsou definovány typy funkcí. Texty názvů typu funkce se používají při výpisu namísto textů v Funkce:nazev_funkce_LL .
 # Třída TypFunkce nebere v úvahu závislost na volebnim obdobi, protože tu je možné získat až pomocí dceřinných tříd (OsobyZarazeni).
@@ -254,15 +248,19 @@ class TypFunkce(TypOrganu):
 
         # Připoj Typu orgánu
         suffix="__typ_organu"
-        self.tbl['typ_funkce'] = pd.merge(left=self.tbl['typ_funkce'], right=self.tbl['typ_organu'], on="id_typ_organu", suffixes=("", suffix), how='left')
+        self.tbl['typ_funkce'] = pd.merge(
+            left=self.tbl['typ_funkce'],
+            right=self.tbl['typ_organu'],
+            on="id_typ_organu",
+            suffixes=("", suffix),
+            how='left'
+        )
         # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou.
         # Tímto se vyhneme varování v 'drop_by_inconsistency'.
         self.tbl['typ_funkce'].drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
         self.tbl['typ_funkce'] = self.drop_by_inconsistency(self.tbl['typ_funkce'], suffix, 0.1, t1_name='typ_funkce', t2_name='typ_organu', t1_on='id_typ_organu', t2_on='id_typ_organu')
 
         self.nastav_dataframe(self.tbl['typ_funkce'])
-        #self.df = self.tbl['typ_funkce']
-        #self.nastav_meta()
 
         log.debug("<-- TypFunkce")
 
@@ -305,7 +303,13 @@ class Funkce(Organy, TypFunkce):
 
         # Připoj Orgány
         suffix = "__organy"
-        self.tbl['funkce'] = pd.merge(left=self.tbl['funkce'], right=self.tbl['organy'], on='id_organu', suffixes=("", suffix), how='left')
+        self.tbl['funkce'] = pd.merge(
+            left=self.tbl['funkce'],
+            right=self.tbl['organy'],
+            on='id_organu',
+            suffixes=("", suffix),
+            how='left'
+        )
         self.tbl['funkce'] =  self.drop_by_inconsistency(self.tbl['funkce'], suffix, 0.1, 'funkce', 'organy')
 
         # Připoj Typ funkce
@@ -317,8 +321,6 @@ class Funkce(Organy, TypFunkce):
             assert len(self.tbl['funkce'][self.tbl['funkce'].id_organu.isna()]) == 0
 
         self.nastav_dataframe(self.tbl['funkce'])
-        #self.df = self.funkce
-        #self.nastav_meta()
 
         log.debug("<-- Funkce")
 
@@ -364,8 +366,6 @@ class Osoby(PoslanciOsobyObecne):
         #self.drop_by_inconsistency(self.tbl['osoby'], suffix, 0.1, 'hlasovani', 'osoba_extra', inplace=True)
 
         self.nastav_dataframe(self.tbl['osoby'])
-        #self.df = self.osoby
-        #self.nastav_meta()
 
         log.debug("<-- Osoby")
 
@@ -461,8 +461,6 @@ class OsobyZarazeni(Funkce, Organy, Osoby):
         self.vyber_platne_osoby_zarazeni()
 
         self.nastav_dataframe(self.tbl['osoby_zarazeni'])
-        #self.df = self.osoby_zarazeni
-        #self.nastav_meta()
 
         log.debug("<-- OsobyZarazeni")
 
@@ -530,6 +528,10 @@ class Poslanci(OsobyZarazeni, Organy):
         self.tbl['pkgps'], self.tbl['_pkgps'] = self.nacti_pkgps()
         self.tbl['poslanci'], self.tbl['_poslanci'] = self.nacti_poslance()
 
+        # Zúžení na dané volební období
+        if self.volebni_obdobi != -1:
+            self.tbl['poslanci'] = self.tbl['poslanci'][self.tbl['poslanci'].id_organu == self.snemovna.id_organu]
+
         # Připojení informace o osobě, např. jméno a příjmení
         suffix = "__osoby"
         self.tbl['poslanci'] = pd.merge(left=self.tbl['poslanci'], right=self.tbl['osoby'], on='id_osoba', suffixes = ("", suffix), how='left')
@@ -540,23 +542,48 @@ class Poslanci(OsobyZarazeni, Organy):
         self.tbl['poslanci'] = pd.merge(left=self.tbl['poslanci'], right=self.tbl['pkgps'], on='id_poslanec', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'pkgps', inplace=True)
 
-        ## Merge osoby_zarazeni ... TODO: sem nepatří Klub, ale Politická strana
-        #strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(self.poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_organu_cz == "Klub") & (self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.cl_funkce=='členství')].copy()
-        strany = self.tbl['osoby_zarazeni'][(self.tbl['osoby_zarazeni'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['osoby_zarazeni'].nazev_typ_organu_cz == "Klub") & (self.tbl['osoby_zarazeni'].cl_funkce=='členství')].copy()
-        strany.rename(columns={'id_organu': 'id_strany', 'nazev_organu_cz': 'nazev_strany_cz', 'zkratka': 'zkratka_strany'}, inplace=True)
-        self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], strany[['id_osoba', 'id_strany', 'nazev_strany_cz', 'zkratka_strany']], on='id_osoba', how="left")
-        self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'osoby_zarazeni')
-        self.meta['id_strany'] = {"popis": 'Identifikátor strany, do které je aktuálně poslanec zařazen, viz Organy:id_organu', 'tabulka': 'df', 'vlastni': True}
-        self.meta['nazev_strany_cz'] = {"popis": 'Název strany, do které je aktuálně poslanec zařazen, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
-        self.meta['zkratka_strany'] = {"popis": 'Zkratka strany, do které je aktuálně poslanec zařazen, viz Organy:zkratka', 'tabulka': 'df', 'vlastni': True}
+        # Připoj informace o kandidátce
+        suffix = "__organy"
+        self.tbl['poslanci'] = pd.merge(left=self.tbl['poslanci'], right=self.tbl['organy'][["id_organu", "nazev_organu_cz", "zkratka"]], left_on='id_kandidatka', right_on='id_organu', suffixes = ("", suffix), how='left')
+        self.tbl['poslanci'].drop(columns=['id_organu__organy'], inplace=True)
+        self.tbl['poslanci'].rename(columns={'nazev_organu_cz': 'nazev_kandidatka_cz', 'zkratka': 'zkratka_kandidatka'}, inplace=True)
+        self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'organy', t1_on='id_organu', t2_on='id_kandidatka', inplace=True)
+        self.meta['nazev_kandidatka_cz'] = {"popis": 'Název strany, za kterou poslanec kandidoval, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
+        self.meta['zkratka_kandidatka'] = {"popis": 'Zkratka strany, za kterou poslanec kandidoval, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
 
-        # Zúžení na dané volební období
-        if self.volebni_obdobi != -1:
-            self.tbl['poslanci'] = self.tbl['poslanci'][self.tbl['poslanci'].id_organu == self.snemovna.id_organu]
+        # Připoj informace o kraji
+        suffix = "__organy"
+        self.tbl['poslanci'] = pd.merge(left=self.tbl['poslanci'], right=self.tbl['organy'][["id_organu", "nazev_organu_cz", "zkratka"]], left_on='id_kraj', right_on='id_organu', suffixes = ("", suffix), how='left')
+        self.tbl['poslanci'].drop(columns=['id_organu__organy'], inplace=True)
+        self.tbl['poslanci'].rename(columns={'nazev_organu_cz': 'nazev_kraj_cz', 'zkratka': 'zkratka_kraj'}, inplace=True)
+        self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'organy', t1_on='id_kraj', t2_on='id_organu', inplace=True)
+        self.meta['nazev_kraj_cz'] = {"popis": 'Název kraje, za který poslanec kandidoval, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
+        self.meta['zkratka_kraj'] = {"popis": 'Zkratka kraje, za který poslanec kandidoval, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
+
+
+        # Pripoj data nastoupení do parlamentu, příp. odstoupení z parlamentu
+        parlament = self.tbl['osoby_zarazeni'][(self.tbl['osoby_zarazeni'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['osoby_zarazeni'].nazev_typ_organu_cz == "Parlament") & (self.tbl['osoby_zarazeni'].cl_funkce=='členství')].copy()
+        parlament = parlament.sort_values(['id_osoba', 'do_o']).groupby('id_osoba').last().reset_index()
+        parlament.rename(columns={'id_organu': 'id_parlament', 'od_o': 'od_parlament', 'do_o': 'do_parlament'}, inplace=True)
+        self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], parlament[['id_osoba', 'id_parlament', 'od_parlament', 'do_parlament']], on='id_osoba', how="left")
+        self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'osoby_zarazeni')
+        self.meta['id_parlament'] = {"popis": 'Identifikátor parlamentu, jehož byli poslanci členy, viz Organy:id_organu', 'tabulka': 'df', 'vlastni': True}
+        self.meta['od_parlament'] = {"popis": 'Datum začátku zařazení poslanců do parlamentu, viz Organy:od_o', 'tabulka': 'df', 'vlastni': True}
+        self.meta['do_parlament'] = {"popis": 'Datum konce zařazení poslanců do parlamentu, viz Organy:do_o', 'tabulka': 'df', 'vlastni': True}
+
+        # Připoj informace o posledním poslaneckém klubu z 'osoby_zarazeni'.
+        kluby = self.tbl['osoby_zarazeni'][(self.tbl['osoby_zarazeni'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['osoby_zarazeni'].nazev_typ_organu_cz == "Klub") & (self.tbl['osoby_zarazeni'].cl_funkce=='členství')].copy()
+        kluby = kluby.sort_values(['id_osoba', 'do_o']).groupby('id_osoba').last().reset_index()
+        kluby.rename(columns={'id_organu': 'id_klub', 'nazev_organu_cz': 'nazev_klub_cz', 'zkratka': 'zkratka_klub', 'od_o': 'od_klub', 'do_o': 'do_klub'}, inplace=True)
+        self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], kluby[['id_osoba', 'id_klub', 'nazev_klub_cz', 'zkratka_klub', 'od_klub', 'do_klub']], on='id_osoba', how="left")
+        self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'osoby_zarazeni')
+        self.meta['id_klub'] = {"popis": 'Identifikátor posledního klubu, do něhož byli poslanci zařazeni, viz Organy:id_organu', 'tabulka': 'df', 'vlastni': True}
+        self.meta['nazev_klub_cz'] = {"popis": 'Název posledního klubu, do něhož byli poslanci zařazeni, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
+        self.meta['zkratka_klub'] = {"popis": 'Zkratka posledního klubu, do něhož byli poslanci zařazeni, viz Organy:zkratka', 'tabulka': 'df', 'vlastni': True}
+        self.meta['od_klub'] = {"popis": 'Datum začátku zařazení poslanců do posledního klubu, viz Organy:od_o', 'tabulka': 'df', 'vlastni': True}
+        self.meta['do_klub'] = {"popis": 'Datum konce zařazení poslanců do posledního klubu, viz Organy:do_o', 'tabulka': 'df', 'vlastni': True}
 
         self.nastav_dataframe(self.tbl['poslanci'])
-        #self.df = self.poslanci
-        #self.nastav_meta()
 
         log.debug("<-- Poslanci")
 
