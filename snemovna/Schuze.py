@@ -38,8 +38,8 @@ class Schuze(SchuzeObecne, Organy):
         self.schuze = pd.merge(left=self.schuze, right=self.schuze_stav, on='id_schuze', suffixes = ("", suffix), how='left')
         self.schuze = self.drop_by_inconsistency(self.schuze, suffix, 0.1, 'schuze', 'schuze_stav')
 
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.schuze = self.schuze[self.schuze.id_org == id_organu_dle_volebniho_obdobi]
+        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.schuze = self.schuze[self.schuze.id_org == id_organ_dle_volebniho_obdobi]
 
         self.df = self.schuze
         self.nastav_meta()

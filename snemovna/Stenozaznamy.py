@@ -32,8 +32,8 @@ class Steno(StenoObecne, Organy):
 
         self.steno, self._steno = self.nacti_steno()
 
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.steno = self.steno[self.steno.id_org == id_organu_dle_volebniho_obdobi]
+        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.steno = self.steno[self.steno.id_org == id_organ_dle_volebniho_obdobi]
 
         self.df = self.steno
         self.nastav_meta()
@@ -81,8 +81,8 @@ class StenoBod(Steno, Organy):
         self.steno_bod = pd.merge(left=self.steno_bod, right=self.steno, on='id_steno', suffixes = ("", suffix), how='left')
         self.steno_bod = self.drop_by_inconsistency(self.steno_bod, suffix, 0.1, "steno_bod", "steno")
 
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.steno_bod = self.steno_bod[self.steno_bod.id_org == id_organu_dle_volebniho_obdobi]
+        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.steno_bod = self.steno_bod[self.steno_bod.id_org == id_organ_dle_volebniho_obdobi]
 
         self.df = self.steno_bod
         self.nastav_meta()
@@ -110,11 +110,11 @@ class StenoBod(Steno, Organy):
 # Pokud je druh == 4, tj. předsedající, nemusí to automaticky znamenat, že v rámci jeho vystoupení se bude jednat pouze o řízení schůze - ačkoliv by řídící schůze se měl vyvarovat projevů jiných než k řízení schůze, může se stát, že pokud to nikdo nerozporuje, může vystoupit i s jiným projevem (např. za situace, kdy není k dispozici žádný místopředseda či předseda PS, který by za něj převzal řízení schůze).
 # Záznamy v druh typu ověřeno jsou zkontrolovány na základě automatického vyhledání záznamů o vystoupení, které neodpovídají jejich obvyklému řazení.
 
-class StenoRec(Steno, Osoby, BodSchuze):
+class StenoRecnici(Steno, Osoby, BodSchuze):
 
     def __init__(self, *args, **kwargs):
-        log.debug('--> StenoRec')
-        super(StenoRec, self).__init__(*args, **kwargs)
+        log.debug('--> StenoRecnici')
+        super(StenoRecnici, self).__init__(*args, **kwargs)
 
         self.paths['steno_rec'] = f"{self.data_dir}/rec.unl"
 
@@ -125,8 +125,8 @@ class StenoRec(Steno, Osoby, BodSchuze):
         self.steno_rec = pd.merge(left=self.steno_rec, right=self.steno, on='id_steno', suffixes = ("", suffix), how='left')
         self.steno_rec = self.drop_by_inconsistency(self.steno_rec, suffix, 0.1, "steno_rec", "steno")
 
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.steno_rec = self.steno_rec[self.steno_rec.id_org == id_organu_dle_volebniho_obdobi]
+        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.steno_rec = self.steno_rec[self.steno_rec.id_org == id_organ_dle_volebniho_obdobi]
 
         # Merge osoby
         suffix = "__osoby"
@@ -141,7 +141,7 @@ class StenoRec(Steno, Osoby, BodSchuze):
         self.df = self.steno_rec
         self.nastav_meta()
 
-        log.debug('<-- StenoRec')
+        log.debug('<-- StenoRecnici')
 
     def nacti_steno_rec(self):
         header = {

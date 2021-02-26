@@ -247,8 +247,8 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
         self.zpochybneni_poslancem = pd.merge(left=self.zpochybneni_poslancem, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.zpochybneni_poslancem, suffix, 0.1, 'zpochybneni_poslancem', 'osoby', inplace=True)
 
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.zpochybneni_poslancem = self.zpochybneni_poslancem[self.zpochybneni_poslancem.id_organ == id_organu_dle_volebniho_obdobi]
+        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.zpochybneni_poslancem = self.zpochybneni_poslancem[self.zpochybneni_poslancem.id_organ == id_organ_dle_volebniho_obdobi]
 
         self.df = self.zpochybneni_poslancem
         self.nastav_meta()
@@ -291,87 +291,87 @@ class Omluvy(HlasovaniObecne, Poslanci, Organy):
         self.organy =  self.drop_by_inconsistency(self.omluvy, suffix, 0.1, 'omluvy', 'organy')
 
         # Zúžení na volební období
-        id_organu_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organu_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.omluvy = self.omluvy[self.omluvy.id_obdobi == id_organu_dle_volebniho_obdobi]
+        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+      self.omluvy = self.omluvy[self.omluvy.id_obdobi == id_organ_dle_volebniho_obdobi]
 
-        self.df = self.omluvy
-        self.nastav_meta()
+      self.df = self.omluvy
+      self.nastav_meta()
 
-        log.debug("<-- Omluvy")
+      log.debug("<-- Omluvy")
 
-    def nacti_omluvy(self):
-        # Tabulka zaznamenává časové ohraničení omluv poslanců z jednání Poslanecké sněmovny.
-        # Omluvy poslanců sděluje předsedající na začátku nebo v průběhu jednacího dne.
-        # Data z tabulky se použijí pouze k nahrazení výsledku typu '@', tj. pokud výsledek hlasování jednotlivého poslance je nepřihlášen, pak pokud zároveň čas hlasování spadá do časového intervalu omluvy, pak se za výsledek považuje 'M', tj. omluven.
-        #Pokud je poslanec omluven a zároveň je přihlášen, pak výsledek jeho hlasování má přednost před omluvou.
-        header = {
-            "id_organ": MItem('Int64', 'Identifikátor volebního období, viz Organy:id_organ'),
-            "id_poslanec": MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
-            "den": MItem('string', 'Datum omluvy'),
-            "od": MItem('string', 'Čas začátku omluvy, pokud je null, pak i omluvy:do je null a jedná se o omluvu na celý jednací den.'),
-            "do": MItem('string', 'Čas konce omluvy, pokud je null, pak i omluvy:od je null a jedná se o omluvu na celý jednací den.')
-        }
+  def nacti_omluvy(self):
+      # Tabulka zaznamenává časové ohraničení omluv poslanců z jednání Poslanecké sněmovny.
+      # Omluvy poslanců sděluje předsedající na začátku nebo v průběhu jednacího dne.
+      # Data z tabulky se použijí pouze k nahrazení výsledku typu '@', tj. pokud výsledek hlasování jednotlivého poslance je nepřihlášen, pak pokud zároveň čas hlasování spadá do časového intervalu omluvy, pak se za výsledek považuje 'M', tj. omluven.
+      #Pokud je poslanec omluven a zároveň je přihlášen, pak výsledek jeho hlasování má přednost před omluvou.
+      header = {
+          "id_organ": MItem('Int64', 'Identifikátor volebního období, viz Organy:id_organ'),
+          "id_poslanec": MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
+          "den": MItem('string', 'Datum omluvy'),
+          "od": MItem('string', 'Čas začátku omluvy, pokud je null, pak i omluvy:do je null a jedná se o omluvu na celý jednací den.'),
+          "do": MItem('string', 'Čas konce omluvy, pokud je null, pak i omluvy:od je null a jedná se o omluvu na celý jednací den.')
+      }
 
-        _df = pd.read_csv(self.paths['omluvy'], sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'omluvy')
-        self.rozsir_meta(header, tabulka='omluvy', vlastni=False)
+      _df = pd.read_csv(self.paths['omluvy'], sep="|", names = header,  index_col=False, encoding='cp1250')
+      df = pretypuj(_df, header, 'omluvy')
+      self.rozsir_meta(header, tabulka='omluvy', vlastni=False)
 
-        # TODO !!!!
-        # Přidej sloupec typu 'datetime_from'
-        #df['datetime_from'] = pd.to_datetime(df['den'] + ' ' + df['od'], format='%d.%m.%Y %H:%M')
-        #df['datetime_from'] = df['datetime_from'].dt.tz_localize(self.tzn)
+      # TODO !!!!
+      # Přidej sloupec typu 'datetime_from'
+      #df['datetime_from'] = pd.to_datetime(df['den'] + ' ' + df['od'], format='%d.%m.%Y %H:%M')
+      #df['datetime_from'] = df['datetime_from'].dt.tz_localize(self.tzn)
 
-        # Přidej sloupec typu 'datetime_to'
-        #df['datetime_to'] = pd.to_datetime(df['den'] + ' ' + df['do'], format='%d.%m.%Y %H:%M')
-        #df['datetime_to'] = df['datetime_to'].dt.tz_localize(tzn)
+      # Přidej sloupec typu 'datetime_to'
+      #df['datetime_to'] = pd.to_datetime(df['den'] + ' ' + df['do'], format='%d.%m.%Y %H:%M')
+      #df['datetime_to'] = df['datetime_to'].dt.tz_localize(tzn)
 
-        return df, _df
+      return df, _df
 
 
-# TODO: not finished at all!!!
-# Tabulka hl_poslanec
-# Tabulka zaznamenává výsledek hlasování jednotlivého poslance.
-class HlasovaniPoslance(Hlasovani, Poslanci, Organy):
+TODO: not finished at all!!!
+Tabulka hl_poslanec
+Tabulka zaznamenává výsledek hlasování jednotlivého poslance.
+ass HlasovaniPoslance(Hlasovani, Poslanci, Organy):
 
-    def __init__(self, *args, **kwargs):
-        log.debug("--> HlasovaniPoslance")
+  def __init__(self, *args, **kwargs):
+      log.debug("--> HlasovaniPoslance")
 
-        super(HlasovaniPoslance, self).__init__(*args, **kwargs)
+      super(HlasovaniPoslance, self).__init__(*args, **kwargs)
 
-        # V souborech uložena jako hlXXXXhN.unl, kde XXXX je reference volebního období a N je číslo části. V 6. a 7. volebním období obsahuje část č. 1 hlasování 1. až 50. schůze, část č. 2 hlasování od 51. schůze.
-        self.paths['hlasovani_poslance'] = glob(f"{self.data_dir}/hl{self.volebni_obdobi}h*.unl")
+      # V souborech uložena jako hlXXXXhN.unl, kde XXXX je reference volebního období a N je číslo části. V 6. a 7. volebním období obsahuje část č. 1 hlasování 1. až 50. schůze, část č. 2 hlasování od 51. schůze.
+      self.paths['hlasovani_poslance'] = glob(f"{self.data_dir}/hl{self.volebni_obdobi}h*.unl")
 
-        self.hlasovani_poslance, self._hlasovani_poslance = self.nacti_hlasovani_poslance()
+      self.hlasovani_poslance, self._hlasovani_poslance = self.nacti_hlasovani_poslance()
 
-        # Připoj Poslance
-        to_skip = ['web', 'ulice', 'obec', 'psc', 'telefon', 'fax', 'psp_telefon', 'email', 'facebook', 'foto', 'zmena', 'umrti', 'adresa', 'sirka', 'delka', 'id_obdobi']
-        self.hlasovani_poslance = pd.merge(left=self.hlasovani_poslance, right=self.poslanci, on="id_poslanec", suffixes=("", "__poslanci"), how='left')
-        self.hlasovani_poslance.drop(columns = to_skip, inplace=True)
-        self.drop_by_inconsistency(self.hlasovani_poslance, "__poslanci", 0.1, 'hlasovani_poslance', 'poslanci', inplace=True)
+      # Připoj Poslance
+      to_skip = ['web', 'ulice', 'obec', 'psc', 'telefon', 'fax', 'psp_telefon', 'email', 'facebook', 'foto', 'zmena', 'umrti', 'adresa', 'sirka', 'delka', 'id_obdobi']
+      self.hlasovani_poslance = pd.merge(left=self.hlasovani_poslance, right=self.poslanci, on="id_poslanec", suffixes=("", "__poslanci"), how='left')
+      self.hlasovani_poslance.drop(columns = to_skip, inplace=True)
+      self.drop_by_inconsistency(self.hlasovani_poslance, "__poslanci", 0.1, 'hlasovani_poslance', 'poslanci', inplace=True)
 
-        self.df = self.hlasovani_poslance
-        self.nastav_meta()
+      self.df = self.hlasovani_poslance
+      self.nastav_meta()
 
-        log.debug("<-- HlasovaniPoslance")
+      log.debug("<-- HlasovaniPoslance")
 
-    def nacti_hlasovani_poslance(self):
-        header = {
-            'id_poslanec': MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
-            'id_hlasovani': MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani'),
-            'vysledek__ORIG': MItem('string',"Hlasování jednotlivého poslance. 'A' - ano, 'B' nebo 'N' - ne, 'C' - zdržel se (stiskl tlačítko X), 'F' - nehlasoval (byl přihlášen, ale nestiskl žádné tlačítko), '@' - nepřihlášen, 'M' - omluven, 'W' - hlasování před složením slibu poslance, 'K' - zdržel se/nehlasoval. Viz úvodní vysvětlení zpracování výsledků hlasování.")
-        }
+  def nacti_hlasovani_poslance(self):
+      header = {
+          'id_poslanec': MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
+          'id_hlasovani': MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani'),
+          'vysledek__ORIG': MItem('string',"Hlasování jednotlivého poslance. 'A' - ano, 'B' nebo 'N' - ne, 'C' - zdržel se (stiskl tlačítko X), 'F' - nehlasoval (byl přihlášen, ale nestiskl žádné tlačítko), '@' - nepřihlášen, 'M' - omluven, 'W' - hlasování před složením slibu poslance, 'K' - zdržel se/nehlasoval. Viz úvodní vysvětlení zpracování výsledků hlasování.")
+      }
 
-        # Hlasovani poslance může být ve více souborech
-        frames = []
-        for f in self.paths['hlasovani_poslance']:
-          frames.append(pd.read_csv(f, sep="|", names = header,  index_col=False, encoding='cp1250'))
+      # Hlasovani poslance může být ve více souborech
+      frames = []
+      for f in self.paths['hlasovani_poslance']:
+        frames.append(pd.read_csv(f, sep="|", names = header,  index_col=False, encoding='cp1250'))
 
-        _df = pd.concat(frames, ignore_index=True)
-        df = pretypuj(_df, header, name='hlasovani_poslance')
-        self.rozsir_meta(header, tabulka='hlasovani_poslance', vlastni=False)
+      _df = pd.concat(frames, ignore_index=True)
+      df = pretypuj(_df, header, name='hlasovani_poslance')
+      self.rozsir_meta(header, tabulka='hlasovani_poslance', vlastni=False)
 
-        mask = {'A': 'ano', 'B': 'ne', 'N': 'ne', 'C': 'zdržení se', 'F': 'nehlasování', '@': 'nepřihlášení', 'M': 'omluva', 'W': 'hlasování bez slibu', 'K': 'zdržení/nehlasování'}
-        df['vysledek'] = mask_by_values(df.vysledek__ORIG, mask)
-        self.meta['vysledek'] = dict(popis='Hlasování jednotlivého poslance.', tabulka='hlasovani_poslance', vlastni=True)
+      mask = {'A': 'ano', 'B': 'ne', 'N': 'ne', 'C': 'zdržení se', 'F': 'nehlasování', '@': 'nepřihlášení', 'M': 'omluva', 'W': 'hlasování bez slibu', 'K': 'zdržení/nehlasování'}
+      df['vysledek'] = mask_by_values(df.vysledek__ORIG, mask)
+      self.meta['vysledek'] = dict(popis='Hlasování jednotlivého poslance.', tabulka='hlasovani_poslance', vlastni=True)
 
-        return df, _df
+      return df, _df

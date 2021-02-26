@@ -31,7 +31,7 @@ Cas = namedtuple('Cas', ['typ', 'hodina', 'minuta'])
 # Texty nejsou součástí oficiálních tabulek PS, vytváříme je web scrapingem.
 # Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
-class StenoTexty(StenoRec, OsobyZarazeni):
+class StenoTexty(StenoRecnici, OsobyZarazeni):
 
     def __init__(self, *args, **kwargs):
         log.debug('--> StenoTexty')
@@ -83,25 +83,25 @@ class StenoTexty(StenoRec, OsobyZarazeni):
         self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
         self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
 
-        ## Merge osoby_zarazeni
-        poslanci = self.osoby_zarazeni[(self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.id_organu==self.id_organu) & (self.osoby_zarazeni.cl_funkce=='členství')] # všichni poslanci
-        strany = self.osoby_zarazeni[(self.osoby_zarazeni.id_osoba.isin(poslanci.id_osoba)) & (self.osoby_zarazeni.nazev_typ_organu_cz == "Klub") & (self.osoby_zarazeni.do_o.isna()) & (self.osoby_zarazeni.cl_funkce=='členství')]
+        ## Merge zarazeni_osoby
+        poslanci = self.zarazeni_osoby[(self.zarazeni_osoby.do_o.isna()) & (self.zarazeni_osoby.id_organu==self.id_organu) & (self.zarazeni_osoby.cl_funkce=='členství')] # všichni poslanci
+        strany = self.zarazeni_osoby[(self.zarazeni_osoby.id_osoba.isin(poslanci.id_osoba)) & (self.zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (self.zarazeni_osoby.do_o.isna()) & (self.zarazeni_osoby.cl_funkce=='členství')]
         self.steno_texty = pd.merge(self.steno_texty, strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
 
         ## Merge Strana
-        snemovna_id = self.organy[self.organy.nazev_organu_cz=="Poslanecká sněmovna"].sort_values(by="id_organ").iloc[-1].id_organ
+        snemovna_id = self.organy[self.organy.nazev_organ_cz=="Poslanecká sněmovna"].sort_values(by="id_organ").iloc[-1].id_organ
         snemovna_od = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].od_organ).tz_localize("Europe/Prague")
         snemovna_do = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].do_organ).tz_localize("Europe/Prague")
 
-        snemovna_cond = (self.osoby_zarazeni.od_o >= snemovna_od) & (self.osoby_zarazeni.nazev_typ_org_cz == "Klub") & (self.osoby_zarazeni.cl_funkce=='členství')
+        snemovna_cond = (self.zarazeni_osoby.od_o >= snemovna_od) & (self.zarazeni_osoby.nazev_typ_org_cz == "Klub") & (self.zarazeni_osoby.cl_funkce=='členství')
         if pd.isnull(snemovna_do) == False:
-            snemovna_cond = snemovna_cond | (self.osoby_zarazeni.do_o >= snemovna_do)
-        s = self.osoby_zarazeni[snemovna_cond].groupby('id_osoba').size().sort_values()
+            snemovna_cond = snemovna_cond | (self.zarazeni_osoby.do_o >= snemovna_do)
+        s = self.zarazeni_osoby[snemovna_cond].groupby('id_osoba').size().sort_values()
         prebehlici = s[s > 1]
         print("prebehlici: ", prebehlici)
 
         for id_prebehlika in prebehlici.index:
-            for idx, row in self.osoby_zarazeni[ snemovna_cond & (self.osoby_zarazeni.id_osoba == id_prebehlika)].iterrows():
+            for idx, row in self.zarazeni_osoby[ snemovna_cond & (self.zarazeni_osoby.id_osoba == id_prebehlika)].iterrows():
                 od, do, id_organ, zkratka =  row['od_o'], row['do_o'], row['id_organ'], row['zkratka']
                 print(id_prebehlika, od, do, id_organ, zkratka)
                 self.steno_texty.zkratka.mask((self.steno_texty.date >= od) & (self.steno_texty.date <= do) & (self.steno_texty.id_osoba == id_prebehlika), zkratka, inplace=True)
@@ -122,7 +122,7 @@ class StenoTexty(StenoRec, OsobyZarazeni):
             'schuze': MItem('Int64', 'Číslo schůze.'),
             'turn': MItem('Int64', 'Číslo stenozáznamu v rámci schůze.'),
             'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba.'),
-            "id_rec": MItem('Int64', 'Identifikátor řečníka, viz StenoRec: id_rec'),
+            "id_rec": MItem('Int64', 'Identifikátor řečníka, viz StenoRecnici: id_rec'),
             'poznamka': MItem('string', 'Poznámka extrahovaá ze stenozáznamu.'),
             'je_poznamka': MItem('bool', 'Příznak, že celá promluva je poznámka.'),
             'cas': MItem('string', "Čas extrahovaný ze stenozáznamu."),
