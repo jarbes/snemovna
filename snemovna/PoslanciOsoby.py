@@ -315,6 +315,15 @@ class Funkce(Organy, TypFunkce):
         # Připoj Typ funkce
         suffix = "__typ_funkce"
         self.tbl['funkce'] = pd.merge(left=self.tbl['funkce'], right=self.tbl['typ_funkce'], on="id_typ_funkce", suffixes=("", suffix), how='left')
+
+        # Fix the knows inconsistency in data
+        x = self.tbl['funkce']
+        idx = x[(x.id_typ_organ == 42) & (x.id_typ_organ__typ_funkce == 15)].index
+        log.debug(f"Řešení známé nekonzistence v datech: Upřednostňuji sloupce z tabulky 'funkce' před 'typ_funkce' pro {len(idx)} hodnot.")
+        to_update = ['id_typ_organ', 'typ_id_typ_organ', 'nazev_typ_organ_cz', 'nazev_typ_organ_en', 'typ_organu_obecny']
+        for i in to_update:
+            x.at[idx, i + '__typ_funkce'] = x.loc[idx][i]
+
         self.tbl['funkce'] = self.drop_by_inconsistency(self.tbl['funkce'], suffix, 0.1, 'funkce', 'typ_funkce', t1_on='id_typ_funkce', t2_on='id_typ_funkce')
 
         if self.volebni_obdobi != -1:
