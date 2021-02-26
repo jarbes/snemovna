@@ -2,6 +2,8 @@
 from collections import namedtuple
 import pandas as pd
 
+from snemovna.setup_logger import log
+
 
 #######################################################################
 # Pomocné struktury pro přetížení pd.DataFrame

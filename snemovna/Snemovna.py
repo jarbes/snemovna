@@ -98,6 +98,9 @@ class Snemovna(MyDataFrame):
     def popis(self):
         popis_tabulku(self.df, self.meta, schovej=['aktivni'])
 
+    def popis_sloupec(self, sloupec):
+        popis_sloupec(self.df, sloupec)
+
     def nastav_datovy_zdroj(self, url):
         a = urlparse(url)
         self.file_name = os.path.basename(a.path)
