@@ -560,10 +560,10 @@ class Poslanci(OsobyZarazeni, Organy):
         self.meta['nazev_kraj_cz'] = {"popis": 'Název kraje, za který poslanec kandidoval, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
         self.meta['zkratka_kraj'] = {"popis": 'Zkratka kraje, za který poslanec kandidoval, viz Organy:nazev_organu_cz', 'tabulka': 'df', 'vlastni': True}
 
-
         # Pripoj data nastoupení do parlamentu, příp. odstoupení z parlamentu
         parlament = self.tbl['osoby_zarazeni'][(self.tbl['osoby_zarazeni'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['osoby_zarazeni'].nazev_typ_organu_cz == "Parlament") & (self.tbl['osoby_zarazeni'].cl_funkce=='členství')].copy()
-        parlament = parlament.sort_values(['id_osoba', 'do_o']).groupby('id_osoba').last().reset_index()
+        #parlament = parlament.sort_values(['id_osoba', 'od_o']).groupby('id_osoba').tail(1).reset_index()
+        parlament = parlament.sort_values(['id_osoba', 'od_o']).groupby('id_osoba').tail(1).reset_index()
         parlament.rename(columns={'id_organu': 'id_parlament', 'od_o': 'od_parlament', 'do_o': 'do_parlament'}, inplace=True)
         self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], parlament[['id_osoba', 'id_parlament', 'od_parlament', 'do_parlament']], on='id_osoba', how="left")
         self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'osoby_zarazeni')
@@ -573,7 +573,7 @@ class Poslanci(OsobyZarazeni, Organy):
 
         # Připoj informace o posledním poslaneckém klubu z 'osoby_zarazeni'.
         kluby = self.tbl['osoby_zarazeni'][(self.tbl['osoby_zarazeni'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['osoby_zarazeni'].nazev_typ_organu_cz == "Klub") & (self.tbl['osoby_zarazeni'].cl_funkce=='členství')].copy()
-        kluby = kluby.sort_values(['id_osoba', 'do_o']).groupby('id_osoba').last().reset_index()
+        kluby = kluby.sort_values(['id_osoba', 'od_o']).groupby('id_osoba').tail(1).reset_index()
         kluby.rename(columns={'id_organu': 'id_klub', 'nazev_organu_cz': 'nazev_klub_cz', 'zkratka': 'zkratka_klub', 'od_o': 'od_klub', 'do_o': 'do_klub'}, inplace=True)
         self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], kluby[['id_osoba', 'id_klub', 'nazev_klub_cz', 'zkratka_klub', 'od_klub', 'do_klub']], on='id_osoba', how="left")
         self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'osoby_zarazeni')
