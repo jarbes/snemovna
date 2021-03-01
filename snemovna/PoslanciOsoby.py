@@ -15,23 +15,21 @@ from snemovna.Snemovna import *
 from snemovna.setup_logger import log
 
 
-class PoslanciOsobyObecne(Snemovna):
-    """Obecná třída pro dceřiné třídy (Osoby, Organy, Poslanci, etc.)"""
+class PoslanciOsobyZipDataMixin(object):
+    """Nsatavuje url pro data (viz Osoby, Organy, Poslanci, etc.)"""
 
     def __init__(self, *args, **kwargs):
-        log.debug("--> PoslanciOsobyObecne")
+        log.debug("--> PoslanciOsobyZipDataMixin")
 
-        super(PoslanciOsobyObecne, self).__init__(*args, **kwargs)
+        url = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
+        super(PoslanciOsobyZipDataMixin, self).__init__(url, *args, **kwargs)
 
-        self.nastav_datovy_zdroj("https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip")
 
-        self.stahni_data()
-
-        log.debug("<-- PoslanciOsobyObecne")
+        log.debug("<-- PoslanciOsobyZipDataMixin")
 
 # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
 # Třída TypOrgan nebere v úvahu závislost na volebnim obdobi, protože tu je možné získat až pomocí dceřinných tříd (Orgány, ZarazeniOsoby).
-class TypOrgan(PoslanciOsobyObecne):
+class TypOrgan(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     """
     Pomocná třída, která nese informace o typech orgánů a jejich hierarchiích.
 
@@ -47,7 +45,7 @@ class TypOrgan(PoslanciOsobyObecne):
 
         super(TypOrgan, self).__init__(*args, **kwargs)
 
-        self.paths['typ_organu'] = f"{self.data_dir}/typ_organu.unl"
+        self.paths['typ_organu'] = f"{self.parameters['data_dir']}/typ_organu.unl"
 
         self.tbl['typ_organu'], self.tbl['_typ_organu'] = self.nacti_typ_organu()
 
@@ -72,18 +70,22 @@ class TypOrgan(PoslanciOsobyObecne):
         return df, _df
 
 
-class Organy(TypOrgan):
+class Organy(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self,  *args, **kwargs):
         log.debug("--> Organy")
 
         super(Organy, self).__init__(*args, **kwargs)
 
+        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
+            kwargs['stamp'] = self.parameters['stamp']
+        self.pripoj_data(TypOrgan(*args, **kwargs), jmeno='typ_organ')
+
         # Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně.
         # Slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
-        self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
+        self.paths['funkce'] = f"{self.parameters['data_dir']}/funkce.unl"
         # Některé orgány mají nadřazený orgán a pak je položka organy:organ_id_organ vyplněna,
         # přičemž pouze v některých případech se tyto vazby využívají.
-        self.paths['organy'] = f"{self.data_dir}/organy.unl"
+        self.paths['organy'] = f"{self.parameters['data_dir']}/organy.unl"
 
         self.tbl['organy'], self.tbl['_organy'] = self.nacti_organy()
 
@@ -98,7 +100,7 @@ class Organy(TypOrgan):
         # Nastav volební období, pokud chybí
         if self.volebni_obdobi == None:
             self.volebni_obdobi = self._posledni_snemovna().od_organ.year
-            log.info(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
+            log.debug(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
 
         if self.volebni_obdobi != -1:
             x = self.tbl['organy'][
@@ -236,13 +238,17 @@ class Organy(TypOrgan):
 
 # Tabulka definuje typ funkce v orgánu - pro každý typ orgánu jsou definovány typy funkcí. Texty názvů typu funkce se používají při výpisu namísto textů v Funkce:nazev_funkce_LL .
 # Třída TypFunkce nebere v úvahu závislost na volebnim obdobi, protože tu je možné získat až pomocí dceřinných tříd (ZarazeniOsoby).
-class TypFunkce(TypOrgan):
+class TypFunkce(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, *args, **kwargs):
         log.debug("--> TypFunkce")
         super(TypFunkce, self).__init__(*args, **kwargs)
 
+        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
+            kwargs['stamp'] = self.parameters['stamp']
+        self.pripoj_data(TypOrgan(*args, **kwargs), jmeno='typ_organ')
+
         # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
-        self.paths['typ_funkce'] = f"{self.data_dir}/typ_funkce.unl"
+        self.paths['typ_funkce'] = f"{self.parameters['data_dir']}/typ_funkce.unl"
 
         self.tbl['typ_funkce'], self.tbl['_typ_funkce'] = self.nacti_typ_funkce()
 
@@ -286,15 +292,21 @@ class TypFunkce(TypOrgan):
         return df, _df
 
 
-class Funkce(Organy, TypFunkce):
+class Funkce(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
+#class Funkce(Organy, TypFunkce):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Funkce")
         super(Funkce, self).__init__(*args, **kwargs)
 
+        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
+            kwargs['stamp'] = self.parameters['stamp']
+        self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        self.pripoj_data(TypFunkce(*args, **kwargs), jmeno='typ_funkce')
+
         #Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
         # slouží k definování pořadí funkcionářů v případech, kdy je toto pořadí určeno.
-        self.paths['funkce'] = f"{self.data_dir}/funkce.unl"
+        self.paths['funkce'] = f"{self.parameters['data_dir']}/funkce.unl"
 
         self.tbl['funkce'], self.tbl['_funkce'] = self.nacti_funkce()
 
@@ -354,7 +366,7 @@ class Funkce(Organy, TypFunkce):
 
 
 # TODO: Je zde nějaká časová závislost na volebním období?
-class Osoby(PoslanciOsobyObecne):
+class Osoby(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Osoby")
@@ -363,9 +375,9 @@ class Osoby(PoslanciOsobyObecne):
         # Jména osob, které jsou zařazeni v orgánech.
         # Vzhledem k tomu, že k jednoznačnému rozlišení osob často není dostatek informací,
         # je možné, že ne všechny záznamy odkazují na jedinečné osoby, tj. některé osoby jsou v tabulce vícekrát.
-        self.paths['osoby'] = f"{self.data_dir}/osoby.unl"
+        self.paths['osoby'] = f"{self.parameters['data_dir']}/osoby.unl"
         # Obsahuje vazby na externí systémy. Je-li typ = 1, pak jde o vazbu na evidenci senátorů na senat.cz
-        self.paths['osoba_extra'] = f"{self.data_dir}/osoba_extra.unl"
+        self.paths['osoba_extra'] = f"{self.parameters['data_dir']}/osoba_extra.unl"
 
         self.tbl['osoba_extra'], self.tbl['osoba_extra'] = self.nacti_osoba_extra()
         self.tbl['osoby'], self.tbl['_osoby'] = self.nacti_osoby()
@@ -430,13 +442,21 @@ class Osoby(PoslanciOsobyObecne):
         return df, _df
 
 
-class ZarazeniOsoby(Funkce, Organy, Osoby):
+class ZarazeniOsoby(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, *args, **kwargs):
         log.debug("--> ZarazeniOsoby")
 
         super(ZarazeniOsoby, self).__init__(*args, **kwargs)
 
-        self.paths['zarazeni_osoby'] = f"{self.data_dir}/zarazeni.unl"
+        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
+            kwargs['stamp'] = self.parameters['stamp']
+        self.pripoj_data(Funkce(*args, **kwargs), jmeno='funkce')
+        o = Organy(*args, **kwargs)
+        self.pripoj_data(o, jmeno='organy')
+        self.snemovna = o.snemovna
+        self.pripoj_data(Osoby(*args, **kwargs), jmeno='osoby')
+
+        self.paths['zarazeni_osoby'] = f"{self.parameters['data_dir']}/zarazeni.unl"
 
         self.tbl['zarazeni_osoby'], self.tbl['_zarazeni_osoby'] = self.nacti_zarazeni_osoby()
 
@@ -521,18 +541,26 @@ class ZarazeniOsoby(Funkce, Organy, Osoby):
 
             self.tbl['zarazeni_osoby'] = self.tbl['zarazeni_osoby'][podminka_interval]
 
-class Poslanci(ZarazeniOsoby, Organy):
+
+class Poslanci(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Poslanci")
 
         super(Poslanci, self).__init__(*args, **kwargs)
 
+        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
+            kwargs['stamp'] = self.parameters['stamp']
+        self.pripoj_data(ZarazeniOsoby(*args, **kwargs), jmeno='zarazeni_osoby')
+        o = Organy(*args, **kwargs)
+        self.pripoj_data(o, jmeno='organy')
+        self.snemovna = o.snemovna
+
         # Další informace o poslanci vzhledem k volebnímu období: kontaktní údaje, adresa regionální kanceláře a podobně.
         # Některé údaje jsou pouze v aktuálním volebním období.
-        self.paths['poslanci'] = f"{self.data_dir}/poslanec.unl"
+        self.paths['poslanci'] = f"{self.parameters['data_dir']}/poslanec.unl"
         # Obsahuje GPS souřadnice regionálních kanceláří poslanců.
-        self.paths['pkgps'] = f"{self.data_dir}/pkgps.unl"
+        self.paths['pkgps'] = f"{self.parameters['data_dir']}/pkgps.unl"
 
         self.tbl['pkgps'], self.tbl['_pkgps'] = self.nacti_pkgps()
         self.tbl['poslanci'], self.tbl['_poslanci'] = self.nacti_poslance()
