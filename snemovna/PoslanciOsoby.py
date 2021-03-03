@@ -16,16 +16,40 @@ from snemovna.setup_logger import log
 
 
 class PoslanciOsobyZipDataMixin(object):
-    """Nsatavuje url pro data (viz Osoby, Organy, Poslanci, etc.)"""
+    """Nastavuje společné url pro data o Osobách, Orgánech etc."""
 
     def __init__(self, *args, **kwargs):
         log.debug("--> PoslanciOsobyZipDataMixin")
+        log.debug(f"PoslanciOsobyZipDataMixin args: {args}")
+        log.debug(f"PoslanciOsobyZipDataMixin kwargs: {kwargs}")
 
         url = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
-        super(PoslanciOsobyZipDataMixin, self).__init__(url, *args, **kwargs)
+        super(PoslanciOsobyZipDataMixin, self).__init__(url=url, *args, **kwargs)
 
+        if 'stazeno' not in self.parameters:
+            self.parameters['stazeno'] = []
+
+        if 'stazeno' in kwargs:
+            self.parameters['stazeno'] += kwargs['stazeno']
+
+        log.debug(f"PoslanciOsobyZipDataMixin2 args: {args}")
+        log.debug(f"PoslanciOsobyZipDataMixin2 kwargs: {kwargs}")
+        log.debug(f"PoslanciOsobyZipDataMixin2 params: {self.parameters}")
 
         log.debug("<-- PoslanciOsobyZipDataMixin")
+
+
+#class PoslanciOsobyZipDataMixin(object):
+#    """Nastavuje společné url pro data o Osobách, Orgánech etc."""
+#
+#    def __init__(self, *args, **kwargs):
+#        log.debug("--> PoslanciOsobyZipDataMixin")
+#
+#        super(PoslanciOsobyZipDataMixin, self).__init__(*args, **kwargs)
+#        self.parameters['url'] = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
+#        log.debug(f"PoslanciOsobyZipDataMixin: {self.parameters['url']}")
+#
+#        log.debug("<-- PoslanciOsobyZipDataMixin")
 
 # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
 # Třída TypOrgan nebere v úvahu závislost na volebnim obdobi, protože tu je možné získat až pomocí dceřinných tříd (Orgány, ZarazeniOsoby).
@@ -76,8 +100,10 @@ class Organy(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame)
 
         super(Organy, self).__init__(*args, **kwargs)
 
-        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
-            kwargs['stamp'] = self.parameters['stamp']
+        #self.stahni_data()
+
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
         self.pripoj_data(TypOrgan(*args, **kwargs), jmeno='typ_organ')
 
         # Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně.
@@ -243,8 +269,8 @@ class TypFunkce(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFra
         log.debug("--> TypFunkce")
         super(TypFunkce, self).__init__(*args, **kwargs)
 
-        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
-            kwargs['stamp'] = self.parameters['stamp']
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
         self.pripoj_data(TypOrgan(*args, **kwargs), jmeno='typ_organ')
 
         # Orgány mají svůj typ, tyto typy mají hiearchickou strukturu.
@@ -299,9 +325,11 @@ class Funkce(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame)
         log.debug("--> Funkce")
         super(Funkce, self).__init__(*args, **kwargs)
 
-        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
-            kwargs['stamp'] = self.parameters['stamp']
-        self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
+        o = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        if 'stazeno' in o.parameters:
+            kwargs['stazeno'] = o.parameters['stazeno']
         self.pripoj_data(TypFunkce(*args, **kwargs), jmeno='typ_funkce')
 
         #Záznam mezi orgánem a typem funkce, názvy v funkce:nazev_funkce_LL se používají pouze interně,
@@ -447,13 +475,19 @@ class ZarazeniOsoby(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDat
         log.debug("--> ZarazeniOsoby")
 
         super(ZarazeniOsoby, self).__init__(*args, **kwargs)
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
 
-        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
-            kwargs['stamp'] = self.parameters['stamp']
-        self.pripoj_data(Funkce(*args, **kwargs), jmeno='funkce')
-        o = Organy(*args, **kwargs)
-        self.pripoj_data(o, jmeno='organy')
-        self.snemovna = o.snemovna
+        f = self.pripoj_data(Funkce(*args, **kwargs), jmeno='funkce')
+        if 'stazeno' in f.parameters:
+            kwargs['stazeno'] = f.parameters['stazeno']
+
+        org = Organy(*args, **kwargs)
+        self.pripoj_data(org, jmeno='organy')
+        self.snemovna = org.snemovna
+        if 'stazeno' in org.parameters:
+            kwargs['stazeno'] = org.parameters['stazeno']
+
         self.pripoj_data(Osoby(*args, **kwargs), jmeno='osoby')
 
         self.paths['zarazeni_osoby'] = f"{self.parameters['data_dir']}/zarazeni.unl"
@@ -548,10 +582,13 @@ class Poslanci(PoslanciOsobyZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFram
         log.debug("--> Poslanci")
 
         super(Poslanci, self).__init__(*args, **kwargs)
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
 
-        if ('stamp' not in kwargs) and ('stamp' in self.parameters):
-            kwargs['stamp'] = self.parameters['stamp']
-        self.pripoj_data(ZarazeniOsoby(*args, **kwargs), jmeno='zarazeni_osoby')
+        zo = self.pripoj_data(ZarazeniOsoby(*args, **kwargs), jmeno='zarazeni_osoby')
+        if 'stazeno' in zo.parameters:
+            kwargs['stazeno'] = zo.parameters['stazeno']
+
         o = Organy(*args, **kwargs)
         self.pripoj_data(o, jmeno='organy')
         self.snemovna = o.snemovna

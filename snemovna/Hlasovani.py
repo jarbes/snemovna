@@ -8,7 +8,7 @@ import pandas as pd
 
 from snemovna.utility import *
 
-from snemovna.Snemovna import Snemovna
+from snemovna.Snemovna import *
 from snemovna.PoslanciOsoby import Osoby, Organy, Poslanci
 
 from snemovna.setup_logger import log
@@ -21,34 +21,68 @@ from snemovna.setup_logger import log
 # Pokud skončí v průběhu volebního období poslanci mandát, ihned vzniká mandát jeho náhradníkovi, který se ujímá mandátu po složení slibu na první schůzi, které se zúčastní. Mezitím je ve výsledcích hlasování veden jako nepřihlášen (výsledek 'W').
 # Upozornění: data omluv se mohou doplňovat se zpožděním a tedy počty omluvených se mohou lišit. Na výsledek hlasování to nemá žádný vliv, během hlasování není seznam omluvených k dispozici a omluvení poslanci jsou vedeni jako nepřihlášen.
 
-class HlasovaniObecne(Snemovna):
+class HlasovaniZipDataMixin(object):
 
     def __init__(self, *args, **kwargs):
-        log.debug("--> HlasovaniObecne")
+        log.debug("--> HlasovaniZipDataMixin")
+        log.debug(f"HlasovaniZipDataMixin args: {args}")
+        log.debug(f"HlasovaniZipDataMixin kwargs: {kwargs}")
 
-        super(HlasovaniObecne, self).__init__(*args, **kwargs)
+        stazeno_from_organy = []
+        if 'volebni_obdobi' in kwargs:
+            volebni_obdobi = kwargs['volebni_obdobi']
+        else:
+            org = Organy(*args, **kwargs)
+            volebni_obdobi = org._posledni_snemovna().od_organ.year
+            kwargs['volebni_obdobi'] = volebni_obdobi
+            log.debug(f"GlasovaniZipDataMixin - org.parameters: {org.parameters}")
 
-        self.nastav_datovy_zdroj(f"https://www.psp.cz/eknih/cdrom/opendata/hl-{self.volebni_obdobi}ps.zip")
+            if 'stazeno' in org.parameters:
+                if 'stazeno' in kwargs:
+                    kwargs['stazeno'] += org.parameters['stazeno']
+                else:
+                    kwargs['stazeno'] = org.parameters['stazeno']
+                stazeno_from_organy = kwargs['stazeno']
 
-        self.stahni_data()
+        url = f"https://www.psp.cz/eknih/cdrom/opendata/hl-{volebni_obdobi}ps.zip"
+        super(HlasovaniZipDataMixin, self).__init__(url, *args, **kwargs)
+        self.parameters['stazeno'] = list(set(self.parameters['stazeno'] + stazeno_from_organy))
 
-        log.debug("<-- HlasovaniObecne")
+        if 'stazeno' in kwargs:
+            self.parameters['stazeno'] += kwargs['stazeno']
+
+        log.debug(f"HlasovaniZipDataMixin2 args: {args}")
+        log.debug(f"HlasovaniZipDataMixin2 kwargs: {kwargs}")
+        log.debug(f"HlasovaniZipDataMixini2 parameters: {self.parameters}")
+
+        log.debug("<-- HlasovaniZipDataMixin")
 
 
-class Hlasovani(HlasovaniObecne, Organy):
+class Hlasovani(HlasovaniZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Hlasovani")
+        log.debug(f"Hlasovani args: {args}")
+        log.debug(f"Hlasovani kwargs: {kwargs}")
         super(Hlasovani, self).__init__(*args, **kwargs)
+        log.debug(f"Hlasovani2 args: {args}")
+        log.debug(f"Hlasovani2 kwargs: {kwargs}")
+
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
+        o = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        log.debug(f"Hlasovani3 args: {args}")
+        log.debug(f"Hlasovani3 kwargs: {kwargs}")
+
 
         # Souhrnné informace o hlasování
-        self.paths['hlasovani'] = f"{self.data_dir}/hl{self.volebni_obdobi}s.unl"
+        self.paths['hlasovani'] = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}s.unl"
         # Zpochybnění výsledků hlasování a případné opakované hlasování
-        self.paths['zpochybneni'] = f"{self.data_dir}/hl{self.volebni_obdobi}z.unl"
+        self.paths['zpochybneni'] = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}z.unl"
         # Hlasování, která byla prohlášena za zmatečné, tj. na jejich výsledek nebyl brán zřetel
-        self.paths['zmatecne'] = f"{self.data_dir}/zmatecne.unl"
+        self.paths['zmatecne'] = f"{self.parameters['data_dir']}/zmatecne.unl"
         # Vazba mezi stenozázamem a hlasováním
-        self.paths['stenozaznam'] = f"{self.data_dir}/hl{self.volebni_obdobi}v.unl"
+        self.paths['stenozaznam'] = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}v.unl"
 
         # Načtení datových tabulek
         self.tbl['hlasovani'], self.tbl['_hlasovani'] = self.nacti_hlasovani()
@@ -245,7 +279,7 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
         super(ZpochybneniPoslancem, self).__init__(*args, **kwargs)
 
         # Poslanci, kteří oznámili zpochybnění hlasování
-        self.paths['zpochybneni_poslancem'] = f"{self.data_dir}/hl{self.volebni_obdobi}x.unl"
+        self.paths['zpochybneni_poslancem'] = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}x.unl"
 
         self.tbl['zpochybneni_poslancem'], self.tbl['_zpochybneni_poslancem'] = self.nacti_zpochybneni_poslancem()
 
@@ -280,14 +314,25 @@ class ZpochybneniPoslancem(ZpochybneniHlasovani, Osoby):
         return df, _df
 
 
-class Omluvy(HlasovaniObecne, Poslanci, Organy):
+#class Omluvy(HlasovaniObecne, Poslanci, Organy):
+class Omluvy(HlasovaniZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> Omluvy")
 
         super(Omluvy, self).__init__(*args, **kwargs)
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
 
-        self.paths['omluvy'] = f"{self.data_dir}/omluvy.unl"
+        p = self.pripoj_data(Poslanci(*args, **kwargs), jmeno='poslanci')
+        if 'stazeno' in p.parameters:
+            kwargs['stazeno'] = p.parameters['stazeno']
+        org = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        self.snemovna = org.snemovna
+        if 'stazeno' in org.parameters:
+            kwargs['stazeno'] = org.parameters['stazeno']
+
+        self.paths['omluvy'] = f"{self.parameters['data_dir']}/omluvy.unl"
 
         self.tbl['omluvy'], self.tbl['_omluvy'] = self.nacti_omluvy()
 
@@ -351,7 +396,7 @@ class HlasovaniPoslance(Hlasovani, Poslanci, Organy):
         super(HlasovaniPoslance, self).__init__(*args, **kwargs)
 
         # V souborech uložena jako hlXXXXhN.unl, kde XXXX je reference volebního období a N je číslo části. V 6. a 7. volebním období obsahuje část č. 1 hlasování 1. až 50. schůze, část č. 2 hlasování od 51. schůze.
-        self.paths['hlasovani_poslance'] = glob(f"{self.data_dir}/hl{self.volebni_obdobi}h*.unl")
+        self.paths['hlasovani_poslance'] = glob(f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}h*.unl")
 
         self.tbl['hlasovani_poslance'], self.tbl['_hlasovani_poslance'] = self.nacti_hlasovani_poslance()
 

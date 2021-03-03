@@ -120,10 +120,10 @@ def pretypuj(df, header, name=None, inplace=False):
         new_df = df.copy()
 
     if name is not None:
-        log.debug(f"Přetypování v tabulce '{name}':")
+        log.debug(f"Přetypování v tabulce '{name}'.")
     for col in df.columns:
         if col in header:
-            log.debug(f"Přetypovávám sloupec: '{col}'.")
+            #log.debug(f"Přetypovávám sloupec: '{col}'.")
             if isinstance(header[col], str):
                 new_df[col] = df[col].astype(header[col])
             elif isinstance(header[col], MItem):

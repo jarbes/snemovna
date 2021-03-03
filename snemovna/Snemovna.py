@@ -21,9 +21,9 @@ class SnemovnaDataFrame(MyDataFrame):
     ----------
     df : pandas DataFrame
         základní tabulka dané třídy
-    p : dict
+    paths : dict
         cesty k souborům načtených tabulek
-    t : dict
+    tbl : dict
         načtené tabulky
     meta : třída Meta
         metadata všech dostupných sloupců (napříč načtenými tabulkami)
@@ -44,12 +44,6 @@ class SnemovnaDataFrame(MyDataFrame):
 
     Methods
     -------
-    nastav_datovy_zdroj(url)
-        Nastaví cesty k souborům s tabulkami
-    missing_files()
-        Určí chybějící datové soubory
-    stahni_data()
-        Stáhne data z archivu PS
     drop_by_inconsistency (df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False)
         Prozkoumá tabulku a oveří konzistenci dat po mergování
     nastav_meta()
@@ -59,6 +53,7 @@ class SnemovnaDataFrame(MyDataFrame):
     """
     def __init__(self, volebni_obdobi=None, *args, **kwargs):
         log.debug("--> SnemovnaDataFrame")
+        log.debug(f"Base kwargs: {kwargs}")
         super(SnemovnaDataFrame, self).__init__(*args, **kwargs)
         self._metadata = [
             "df", "meta", 'paths', 'tbl', 'parameters',
@@ -73,10 +68,17 @@ class SnemovnaDataFrame(MyDataFrame):
         )
         self.paths = {}
         self.tbl = {}
-        self.parameters = {}
         self.volebni_obdobi = volebni_obdobi
         self.snemovna = None
         self.tzn = pytz.timezone('Europe/Prague')
+
+        self.parameters = {}
+        #log.debug(f"SnemovnaDataFrame1: {self.parameters}")
+        #self.parameters['data_dir'] = data_dir
+        #self.parameters['stazeno'] = stazeno
+        #self.parameters['stahni'] = stahni
+        #log.debug(f"SnemovnaDataFrame2: {self.parameters}")
+
         log.debug("<-- SnemovnaDataFrame")
 
     def nastav_dataframe(self, frame):
@@ -87,16 +89,17 @@ class SnemovnaDataFrame(MyDataFrame):
             self[col] = frame[col].astype(frame[col].dtype)
         self.nastav_meta()
 
-    def pripoj_data(self, o, jmeno=''):
-        for key in o.paths:
-            self.paths[key] = o.paths[key]
-        for key in o.tbl:
-            self.tbl[key] = o.tbl[key]
-        for key in o.meta:
-            row = o.meta.data.loc[key].to_dict()
+    def pripoj_data(self, obj, jmeno=''):
+        for key in obj.paths:
+            self.paths[key] = obj.paths[key]
+        for key in obj.tbl:
+            self.tbl[key] = obj.tbl[key]
+        for key in obj.meta:
+            row = obj.meta.data.loc[key].to_dict()
             if row['tabulka'] == 'df':
                 row['tabulka'] = jmeno + '_df'
             self.meta[key] = row
+        return obj
 
     def popis(self):
         popis_tabulku(self.df, self.meta, schovej=['aktivni'])
@@ -153,50 +156,48 @@ class SnemovnaDataFrame(MyDataFrame):
 
 
 class SnemovnaZipDataMixin(object):
-
-    def __init__(self, url, data_dir='./data/', stahni=True, stamp=None, *args, **kwargs):
+    def __init__(self, url, data_dir='./data/', stahni=True, stazeno=[], *args, **kwargs):
         log.debug("--> SnemovnaZipDataMixin")
+        log.debug(f"SnemovnaZipDataMixin args: {args}")
+        log.debug(f"SnemovnaZipDataMixin kwargs: {kwargs}")
+
         super(SnemovnaZipDataMixin, self).__init__(*args, **kwargs)
-        self.parameters['url'] = url
+        
+        log.debug(f"SnemovnaZipDataMixin2 args: {args}")
+        log.debug(f"SnemovnaZipDataMixin2 kwargs: {kwargs}")
+        
+        log.debug(f"SnemovnaZipDataMixin2: {self.parameters}")
+
+        log.debug(f"url: {url}")
+        log.debug(f"stahni: {stahni}")
+        log.debug(f"stazeno: {stazeno}")
+
         self.parameters['data_dir'] = data_dir
         self.parameters['stahni'] = stahni
 
-        to_download = False
-        if stamp == None:
-            self.parameters['stamp'] = datetime.now().strftime('%Y%m-%d%H-%M%S-') + str(uuid4())
-            to_download=True
-        else:
-            self.parameters['stamp'] = stamp
+        if 'stazeno' in self.parameters:
+              stazeno = list(set(stazeno + self.parameters['stazeno']))
+              self.parameters['stazeno'] = stazeno
 
-        self.nastav_cesty(self.parameters['url'])
+        if (url not in stazeno) and (stahni == True):
+            log.debug(f"<DOWNLOAD ZACATEK>")
+            a = urlparse(url)
+            filename = os.path.basename(a.path)
+            zip_path = f"{data_dir}/{filename}"
+            log.debug(f"SnemovnaZipDataMixin: Nastavuji cestu k zip souboru na: {zip_path}")
 
-        if (to_download == True) and (stahni == True) and (os.path.isfile(self.parameters['zip_path']) == False):
-            mf = self.missing_files()
-            log.debug(f"Počet chybějících souborů: {len(mf)}, stahni: {stahni}")
-            if (len(mf) > 0) or (stahni == True):
-                if (self.parameters['url'] is not None) \
-                    and (self.parameters['zip_path'] is not None) \
-                    and (self.parameters['data_dir'] is not None):
-                    download_and_unzip(self.parameters['url'], self.parameters['zip_path'], self.parameters['data_dir'])
-                    os.remove(self.parameters['zip_path'])
-                else:
-                    log.error("Chyba: cesty pro stahování nebyly správně nastaveny!")
+            # smaz starý zip soubor, pokud existuje
+            if os.path.isfile(zip_path):
+                os.remove(zip_path)
 
+            log.debug(f"Stahuju {zip_path}!!!!!!!!!")
+            download_and_unzip(url, zip_path, data_dir)
+
+            if 'stazeno' not in self.parameters:
+                self.parameters['stazeno'] = []
+            self.parameters['stazeno'].append(url)
+
+            log.debug(f"<DOWNLOAD KONEC>")
         log.debug("<-- SnemovnaZipDataMixin")
 
-    def nastav_cesty(self, url):
-        a = urlparse(url)
-        filename = os.path.basename(a.path)
-        base, extension = os.path.splitext(filename)
-        self.parameters['url'] = url
-        self.parameters['zip_path'] = f"{self.parameters['data_dir']}/{base}-{self.parameters['stamp']}{extension}"
-        log.debug(f"SnemovnaTest: Nastavuji cestu k zip souboru na: {self.parameters['zip_path']}")
 
-    def missing_files(self):
-        missing_files = []
-        paths_flat = sum([item if isinstance(item, list) else [item] for item in self.paths.values()], [])
-        for p in paths_flat:
-            if path.isfile(p) is not True:
-                missing_files.append(p)
-        log.debug(f"Počet chybějících souborů: {len(missing_files)}")
-        return missing_files
