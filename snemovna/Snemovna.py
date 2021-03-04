@@ -51,7 +51,7 @@ class SnemovnaDataFrame(MyDataFrame):
     rozsir_meta(header, tabulka=None, vlastni=None)
         Rozšíří meta informace k sloupcům dle hlavičky konkrétní tabulky
     """
-    def __init__(self, volebni_obdobi=None, *args, **kwargs):
+    def __init__(self, volebni_obdobi=None, data_dir='./data', *args, **kwargs):
         log.debug("--> SnemovnaDataFrame")
         log.debug(f"Base kwargs: {kwargs}")
         super(SnemovnaDataFrame, self).__init__(*args, **kwargs)
@@ -73,6 +73,7 @@ class SnemovnaDataFrame(MyDataFrame):
         self.tzn = pytz.timezone('Europe/Prague')
 
         self.parameters = {}
+        self.parameters['data_dir'] = data_dir
         #log.debug(f"SnemovnaDataFrame1: {self.parameters}")
         #self.parameters['data_dir'] = data_dir
         #self.parameters['stazeno'] = stazeno
@@ -154,8 +155,29 @@ class SnemovnaDataFrame(MyDataFrame):
         for k, i in header.items():
             self.meta[k] = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
 
-
 class SnemovnaZipDataMixin(object):
+    def stahni_zip_data(self, what):
+        urls = dict(
+            poslanci = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
+        )
+
+        url = urls[what]
+        data_dir = self.parameters['data_dir']
+
+        a = urlparse(url)
+        filename = os.path.basename(a.path)
+        zip_path = f"{data_dir}/{filename}"
+        log.debug(f"SnemovnaZipDataMixin: Nastavuji cestu k zip souboru na: {zip_path}")
+
+        # smaz starý zip soubor, pokud existuje
+        if os.path.isfile(zip_path):
+            os.remove(zip_path)
+
+        download_and_unzip(url, zip_path, data_dir)
+
+
+
+class SnemovnaZipDataMixin_old(object):
     def __init__(self, url, data_dir='./data/', stahni=True, stazeno=[], *args, **kwargs):
         log.debug("--> SnemovnaZipDataMixin")
         log.debug(f"SnemovnaZipDataMixin args: {args}")
