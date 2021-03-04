@@ -11,7 +11,7 @@ from snemovna.setup_logger import log
 # Agenda Schůze obsahuje data schůzí Poslanecké sněmovny: schůze, body pořadu schůze a související data.
 # Informace k tabulkám, viz. https://www.psp.cz/sqw/hp.sqw?k=1308
 
-class SchuzeObecne(Snemovna):
+class SchuzeObecne(object):
     def __init__(self, *args, **kwargs):
         super(SchuzeObecne, self).__init__(*args, **kwargs)
         log.debug('--> SchuzeObecne')
@@ -22,34 +22,12 @@ class SchuzeObecne(Snemovna):
         log.debug('<-- SchuzeObecne')
 
 
-class Schuze(SchuzeObecne, Organy):
-    def __init__(self, *args, **kwargs):
-        log.debug('--> Schuze')
-        super(Schuze, self).__init__(*args, **kwargs)
-
-        self.paths['schuze'] = f"{self.data_dir}/schuze.unl"
-        self.paths['schuze_stav'] = f"{self.data_dir}/schuze_stav.unl"
-
-        self.schuze_stav, self._schuze_stav = self.nacti_schuze_stav()
-        self.schuze, self._schuze = self.nacti_schuze()
-
-        # Připoj informace o stavu schůze
-        suffix = "__schuze_stav"
-        self.schuze = pd.merge(left=self.schuze, right=self.schuze_stav, on='id_schuze', suffixes = ("", suffix), how='left')
-        self.schuze = self.drop_by_inconsistency(self.schuze, suffix, 0.1, 'schuze', 'schuze_stav')
-
-        id_organ_dle_volebniho_obdobi = self.organy[(self.organy.nazev_organ_cz == 'Poslanecká sněmovna') & (self.organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.schuze = self.schuze[self.schuze.id_org == id_organ_dle_volebniho_obdobi]
-
-        self.df = self.schuze
-        self.nastav_meta()
-
-        log.debug('<-- Schuze')
-
+class TabulkaSchuzeMixin(object):
     def nacti_schuze(self):
         # Obsahuje záznamy o schůzích.
         # Pro každou schůzi jsou v tabulce nejvýše dva záznamy, jeden vztahující se k návrhu pořadu, druhý ke schválenému pořadu.
         # I v případě neschválení pořadu schůze jsou dva záznamy, viz schuze:pozvanka a schuze_stav:stav.
+        path = f"{self.parameters['data_dir']}/schuze.unl"
         header = {
           'id_schuze': MItem('Int64', 'Identifikátor schůze, není to primární klíč, je nutno používat i položku schuze:pozvanka. Záznamy schůzí stejného orgánu a stejného čísla (tj. schuze:id_org a schuze:schuze), mají stejné schuze:id_schuze a liší se pouze v schuze:pozvanka.'),
           'id_org': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_org.'),
@@ -60,7 +38,7 @@ class Schuze(SchuzeObecne, Organy):
           'pozvanka__ORIG': MItem('Int64', 'Druh záznamu: null - schválený pořad, 1 - navržený pořad.')
         }
 
-        _df = pd.read_csv(self.paths['schuze'], sep="|", names = header,  index_col=False, encoding='cp1250')
+        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'schuze')
         self.rozsir_meta(header, tabulka='schuze', vlastni=False)
 
@@ -80,9 +58,11 @@ class Schuze(SchuzeObecne, Organy):
         df['pozvanka'] = mask_by_values(df.pozvanka__ORIG, mask)
         self.meta['pozvanka'] = dict(popis='Druh záznamu.', tabulka='schuze', vlastni=True)
 
-        return df, _df
+        self.tbl['schuze'], self.tbl['_schuze'] = df, _df
 
+class TabulkaSchuzeStavMixin(object):
     def nacti_schuze_stav(self):
+        self.paths['schuze_stav'] = f"{self.parameters['data_dir']}/schuze_stav.unl"
         header = {
             'id_schuze': MItem('Int64', 'Identifikátor schůze, viz Schuze:id_schuze.'),
             'stav__ORIG': MItem('Int64', 'Stav schůze: 1 - OK, 2 - pořad schůze nebyl schválen a schůze byla ukončena.'),
@@ -104,65 +84,78 @@ class Schuze(SchuzeObecne, Organy):
         df['typ'] = df.typ__ORIG.astype(str).mask(df.typ__ORIG == 1, "řádná").mask(df.typ__ORIG == 2, "mimořádná")
         self.meta['typ'] = dict(popis='Typ schůze.', tabulka='schuze_stav', vlastni=True)
 
-        return df, _df
+        self.tbl['schuze_stav'], self.tbl['_schuze_stav'] = df, _df
+
+class Schuze(TabulkaSchuzeMixin, TabulkaSchuzeStavMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
+    def __init__(self, stahni=True, *args, **kwargs):
+        log.debug('--> Schuze')
+
+        org = Organy(*args, **kwargs)
+        volebni_obdobi = org.volebni_obdobi
+        kwargs['volebni_obdobi'] = volebni_obdobi
+
+        super(Schuze, self).__init__(*args, **kwargs)
+
+        if stahni == True:
+            self.stahni_zip_data(f"schuze")
+
+        organy = self.pripoj_data(org, jmeno='organy')
+
+        self.nacti_schuze()
+        self.nacti_schuze_stav()
+
+        # Připoj informace o stavu schůze
+        suffix = "__schuze_stav"
+        self.tbl['schuze'] = pd.merge(left=self.tbl['schuze'], right=self.tbl['schuze_stav'], on='id_schuze', suffixes = ("", suffix), how='left')
+        self.drop_by_inconsistency(self.tbl['schuze'], suffix, 0.1, 'schuze', 'schuze_stav', inplace=True)
+
+        id_organ_dle_volebniho_obdobi = organy[(organy.nazev_organ_cz == 'Poslanecká sněmovna') & (organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
+        self.tbl['schuze'] = self.tbl['schuze'][self.tbl['schuze'].id_org == id_organ_dle_volebniho_obdobi]
+
+        self.nastav_dataframe(self.tbl['schuze'])
+
+        log.debug('<-- Schuze')
 
 
-# Tabulka bod_stav
-# Obsahuje typy stavů bodu pořadu schůze.
-class BodStav(SchuzeObecne):
-
-    def __init__(self, *args, **kwargs):
-        super(BodStav, self).__init__(*args, **kwargs)
-        log.debug('--> BodStav')
-
-        self.paths['bod_stav'] = f"{self.data_dir}/bod_stav.unl"
-
-        self.bod_stav, self._bod_stav = self.nacti_bod_stav()
-
-        self.df = self.bod_stav
-        self.nastav_meta()
-
-        log.debug('<-- BodStav')
-
+class TabulkaBodStavMixin(object):
     def nacti_bod_stav(self):
+        path = f"{self.parameters['data_dir']}/bod_stav.unl"
         header = {
             'id_bod_stav': MItem('Int64', 'Typ stavu bodu schůze: typ 3 - neprojednatelný znamená vyřazen z pořadu či neprojednatelný z důvodu legislativního procesu.'),
             'popis': MItem('string', 'Popis stavu bodu.')
         }
 
-        _df = pd.read_csv(self.paths['bod_stav'], sep="|", names = header,  index_col=False, encoding='cp1250')
+        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'bod_stav')
         self.rozsir_meta(header, tabulka='bod_stav', vlastni=False)
 
         df['id_bod_stav__KAT'] = df.id_bod_stav.astype(str).mask(df.id_bod_stav == 3, 'neprojednatelný')
         self.meta['id_bod_stav__KAT'] = dict(popis='Typ stavu bodu schůze.', tabulka='bod_stav', vlastni=True)
 
-        return df, _df
+        self.tbl['bod_stav'], self.tbl['_bod_stav'] = df, _df
+
+# Tabulka bod_stav
+# Obsahuje typy stavů bodu pořadu schůze.
+class BodStav(TabulkaBodStavMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
+    def __init__(self, stahni=True, *args, **kwargs):
+        log.debug('--> BodSatv')
+
+        super(BodStav, self).__init__(*args, **kwargs)
+
+        if stahni == True:
+            self.stahni_zip_data(f"schuze")
+
+        self.nacti_bod_stav()
+        self.nastav_dataframe(self.tbl['bod_stav'])
+
+        log.debug('<-- BodStav')
 
 
 # Obsahuje záznamy o bodech pořadu schůze. Body typu odpověď na písemnou interpelaci (bod_schuze:id_typ == 6) se obvykle nezobrazují, viz dále.
 #Při zobrazení bodu se použijí položky bod_schuze:uplny_naz. Pokud je bod_schuze:id_tisk nebo bod_schuze:id_sd vyplněno, pak se dále použije bod_schuze:uplny_kon, případně text závislý na bod_schuze.id_typ. Poté následuje bod_schuze:poznamka.
-
-class BodSchuze(BodStav):
-    def __init__(self, *args, **kwargs):
-        super(BodSchuze, self).__init__(*args, **kwargs)
-        log.debug('--> BodSchuze')
-
-        self.paths['bod_schuze'] = f"{self.data_dir}/bod_schuze.unl"
-
-        self.bod_schuze, self._bod_schuze = self.nacti_bod_schuze()
-
-        # Připoj informace o stavu bodu
-        suffix = "__bod_stav"
-        self.bod_schuze = pd.merge(left=self.bod_schuze, right=self.bod_stav, on='id_bod_stav', suffixes = ("", suffix), how='left')
-        self.bod_schuze = self.drop_by_inconsistency(self.bod_schuze, suffix, 0.1, 'bod_schuze', 'bod_stav')
-
-        self.df = self.bod_schuze
-        self.nastav_meta()
-
-        log.debug('<-- BodSchuze')
-
+class TabulkaBodSchuzeMixin(object):
     def nacti_bod_schuze(self):
+        path = f"{self.parameters['data_dir']}/bod_schuze.unl"
         header = {
             'id_bod': MItem('Int64', 'Identifikátor bodu pořadu schůze, není to primární klíč, je nutno používat i položku bod_schuze:pozvanka. Záznamy se stejným id_bod odkazují na stejný bod, i když číslo bodu může být rozdílné (během schvalování pořadu schůze se pořadí bodů může změnit).'),
             'id_schuze': MItem('Int64', 'Identifikátor schůze, viz Schuze:id_schuze a též schuze:pozvanka.'),
@@ -181,8 +174,32 @@ class BodSchuze(BodStav):
             'zkratka': MItem('string', 'Zkrácený název bodu, neoficiální.')
         }
 
-        _df = pd.read_csv(self.paths['bod_schuze'], sep="|", names = header,  index_col=False, encoding='cp1250')
+        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'bod_schuze')
         self.rozsir_meta(header, tabulka='bod_schuze', vlastni=False)
 
-        return df, _df
+        self.tbl['bod_schuze'], self.tbl['_bod_schuze'] = df, _df
+
+class BodSchuze(TabulkaBodSchuzeMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
+    def __init__(self, stahni=True, *args, **kwargs):
+        log.debug('--> BodSchuze')
+
+        super(BodSchuze, self).__init__(*args, **kwargs)
+
+        if stahni == True:
+            self.stahni_zip_data(f"schuze")
+        kwargs['stahni'] =  False
+
+        bod_stav = self.pripoj_data(BodStav(*args, **kwargs), jmeno='bod_stav')
+
+        self.nacti_bod_schuze()
+
+        # Připoj informace o stavu bodu
+        suffix = "__bod_stav"
+        self.tbl['bod_schuze'] = pd.merge(left=self.tbl['bod_schuze'], right=self.tbl['bod_stav'], on='id_bod_stav', suffixes = ("", suffix), how='left')
+        self.drop_by_inconsistency(self.tbl['bod_schuze'], suffix, 0.1, 'bod_schuze', 'bod_stav', inplace=True)
+
+        self.nastav_dataframe(self.tbl['bod_schuze'])
+
+        log.debug('<-- BodSchuze')
+

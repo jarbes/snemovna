@@ -156,12 +156,9 @@ class SnemovnaDataFrame(MyDataFrame):
             self.meta[k] = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
 
 class SnemovnaZipDataMixin(object):
-    def stahni_zip_data(self, what):
-        urls = dict(
-            poslanci = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
-        )
-
-        url = urls[what]
+    def stahni_zip_data(self, nazev):
+        url_prefix = "https://www.psp.cz/eknih/cdrom/opendata/"
+        url = url_prefix + nazev + '.zip'
         data_dir = self.parameters['data_dir']
 
         a = urlparse(url)
