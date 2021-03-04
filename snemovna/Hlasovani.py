@@ -28,25 +28,27 @@ class HlasovaniZipDataMixin(object):
         log.debug(f"HlasovaniZipDataMixin args: {args}")
         log.debug(f"HlasovaniZipDataMixin kwargs: {kwargs}")
 
-        stazeno_from_organy = []
+        # Abychom mohli nastavit cestu, musíme znát volební období.
+        stazeno_organy = []
         if 'volebni_obdobi' in kwargs:
             volebni_obdobi = kwargs['volebni_obdobi']
         else:
             org = Organy(*args, **kwargs)
             volebni_obdobi = org._posledni_snemovna().od_organ.year
             kwargs['volebni_obdobi'] = volebni_obdobi
-            log.debug(f"GlasovaniZipDataMixin - org.parameters: {org.parameters}")
+            log.debug(f"HlasovaniZipDataMixin - org.parameters: {org.parameters}")
 
             if 'stazeno' in org.parameters:
                 if 'stazeno' in kwargs:
                     kwargs['stazeno'] += org.parameters['stazeno']
                 else:
                     kwargs['stazeno'] = org.parameters['stazeno']
-                stazeno_from_organy = kwargs['stazeno']
+                stazeno_organy = kwargs['stazeno']
 
-        url = f"https://www.psp.cz/eknih/cdrom/opendata/hl-{volebni_obdobi}ps.zip"
-        super(HlasovaniZipDataMixin, self).__init__(url, *args, **kwargs)
-        self.parameters['stazeno'] = list(set(self.parameters['stazeno'] + stazeno_from_organy))
+        if 'url' not in kwargs:
+            kwargs['url'] = f"https://www.psp.cz/eknih/cdrom/opendata/hl-{volebni_obdobi}ps.zip"
+        super(HlasovaniZipDataMixin, self).__init__(*args, **kwargs)
+        self.parameters['stazeno'] = list(set(self.parameters['stazeno'] + stazeno_organy))
 
         if 'stazeno' in kwargs:
             self.parameters['stazeno'] += kwargs['stazeno']
@@ -327,6 +329,7 @@ class Omluvy(HlasovaniZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
         p = self.pripoj_data(Poslanci(*args, **kwargs), jmeno='poslanci')
         if 'stazeno' in p.parameters:
             kwargs['stazeno'] = p.parameters['stazeno']
+
         org = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
         self.snemovna = org.snemovna
         if 'stazeno' in org.parameters:
@@ -385,8 +388,6 @@ class Omluvy(HlasovaniZipDataMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
         return df, _df
 
 
-#TODO: not finished at all!!!
-#Tabulka hl_poslanec
 #Tabulka zaznamenává výsledek hlasování jednotlivého poslance.
 class HlasovaniPoslance(Hlasovani, Poslanci, Organy):
 
@@ -394,6 +395,11 @@ class HlasovaniPoslance(Hlasovani, Poslanci, Organy):
         log.debug("--> HlasovaniPoslance")
 
         super(HlasovaniPoslance, self).__init__(*args, **kwargs)
+        if 'stazeno' in self.parameters:
+            kwargs['stazeno'] = self.parameters['stazeno']
+
+        p = self.pripoj_data(Poslanci(*args, **kwargs), jmeno='poslanci')
+        self.snemovna = p.snemovna
 
         # V souborech uložena jako hlXXXXhN.unl, kde XXXX je reference volebního období a N je číslo části. V 6. a 7. volebním období obsahuje část č. 1 hlasování 1. až 50. schůze, část č. 2 hlasování od 51. schůze.
         self.paths['hlasovani_poslance'] = glob(f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}h*.unl")

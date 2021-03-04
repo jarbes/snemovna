@@ -23,8 +23,9 @@ class PoslanciOsobyZipDataMixin(object):
         log.debug(f"PoslanciOsobyZipDataMixin args: {args}")
         log.debug(f"PoslanciOsobyZipDataMixin kwargs: {kwargs}")
 
-        url = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
-        super(PoslanciOsobyZipDataMixin, self).__init__(url=url, *args, **kwargs)
+        if 'url' not in kwargs:
+            kwargs['url'] = "https://www.psp.cz/eknih/cdrom/opendata/poslanci.zip"
+        super(PoslanciOsobyZipDataMixin, self).__init__(*args, **kwargs)
 
         if 'stazeno' not in self.parameters:
             self.parameters['stazeno'] = []
