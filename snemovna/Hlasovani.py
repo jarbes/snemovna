@@ -139,7 +139,7 @@ class Hlasovani(TabulkaHlasovaniMixin, TabulkaZmatecneHlasovaniMixin, TabulkaZpo
         log.debug("--> Hlasovani")
 
         if 'volebni_obdobi' not in kwargs:
-            organy = Organy(*args, **kwargs)
+            organy = Organy(stahni, *args, **kwargs)
             volebni_obdobi = organy.volebni_obdobi
             kwargs['volebni_obdobi'] = volebni_obdobi
         else:
@@ -250,7 +250,7 @@ class ZpochybneniPoslancem(TabulkaZpochybneniPoslancemMixin, SnemovnaZipDataMixi
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug("--> ZpochybneniPoslancem")
 
-        org = Organy(*args, **kwargs)
+        org = Organy(stahni, *args, **kwargs)
         volebni_obdobi = org.volebni_obdobi
         kwargs['volebni_obdobi'] = volebni_obdobi
 
@@ -258,11 +258,10 @@ class ZpochybneniPoslancem(TabulkaZpochybneniPoslancemMixin, SnemovnaZipDataMixi
 
         if stahni == True:
             self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-        kwargs['stahni'] =  False
 
         organy = self.pripoj_data(org, jmeno='organy')
-        osoby = self.pripoj_data(Osoby(*args, **kwargs), jmeno='osoby')
-        hlasovani = self.pripoj_data(Hlasovani(*args, **kwargs), jmeno='hlasovani')
+        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
+        hlasovani = self.pripoj_data(Hlasovani(stahni=False, *args, **kwargs), jmeno='hlasovani')
 
         self.nacti_zpochybneni_poslancem()
 
@@ -323,7 +322,7 @@ class Omluvy(TabulkaOmluvyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug("--> Omluvy")
 
-        org = Organy(*args, **kwargs)
+        org = Organy(stahni, *args, **kwargs)
         volebni_obdobi = org.volebni_obdobi
         kwargs['volebni_obdobi'] = volebni_obdobi
 
@@ -331,11 +330,10 @@ class Omluvy(TabulkaOmluvyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         if stahni == True:
             self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-        kwargs['stahni'] =  False
 
         organy = self.pripoj_data(org, jmeno='organy')
         self.snemovna = organy.snemovna
-        poslanci = self.pripoj_data(Poslanci(*args, **kwargs), jmeno='poslanci')
+        poslanci = self.pripoj_data(Poslanci(stahni=False, *args, **kwargs), jmeno='poslanci')
 
         self.nacti_omluvy()
 
@@ -386,7 +384,7 @@ class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, SnemovnaZipDataMixin, Sne
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug("--> HlasovaniPoslance")
 
-        org = Organy(*args, **kwargs)
+        org = Organy(stahni, *args, **kwargs)
         volebni_obdobi = org.volebni_obdobi
         kwargs['volebni_obdobi'] = volebni_obdobi
 
@@ -394,9 +392,8 @@ class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, SnemovnaZipDataMixin, Sne
 
         if stahni == True:
             self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-        kwargs['stahni'] =  False
 
-        poslanci = self.pripoj_data(Poslanci(*args, **kwargs), jmeno='poslanci')
+        poslanci = self.pripoj_data(Poslanci(stahni=False, *args, **kwargs), jmeno='poslanci')
         self.snemovna = poslanci.snemovna
 
         self.nacti_hlasovani_poslance()

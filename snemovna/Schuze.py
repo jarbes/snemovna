@@ -90,7 +90,7 @@ class Schuze(TabulkaSchuzeMixin, TabulkaSchuzeStavMixin, SnemovnaZipDataMixin, S
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug('--> Schuze')
 
-        org = Organy(*args, **kwargs)
+        org = Organy(stahni, *args, **kwargs)
         volebni_obdobi = org.volebni_obdobi
         kwargs['volebni_obdobi'] = volebni_obdobi
 

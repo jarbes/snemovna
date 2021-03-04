@@ -161,9 +161,9 @@ class Organy(OrganyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         if stahni == True:
             self.stahni_zip_data('poslanci')
-        kwargs['stahni'] =  False
 
-        typ_organu = self.pripoj_data(TypOrganu(*args, **kwargs), jmeno='typ_organu')
+        typ_organu = self.pripoj_data(TypOrganu(stahni=False, *args, **kwargs), jmeno='typ_organu')
+
         self.nacti_organy()
 
         # Připoj Typu orgánu
@@ -228,9 +228,9 @@ class TypFunkce(TypFunkceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         if stahni == True:
             self.stahni_zip_data('poslanci')
-        kwargs['stahni'] =  False
 
-        typ_organu = self.pripoj_data(TypOrganu(*args, **kwargs), jmeno='typ_organu')
+        typ_organu = self.pripoj_data(TypOrganu(stahni=False, *args, **kwargs), jmeno='typ_organu')
+
         self.nacti_typ_funkce()
 
         # Připoj Typu orgánu
@@ -281,10 +281,9 @@ class Funkce(FunkceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         if stahni == True:
             self.stahni_zip_data('poslanci')
-        kwargs['stahni'] = False
 
-        organy = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
-        typ_funkce = self.pripoj_data(TypFunkce(*args, **kwargs), jmeno='typ_funkce')
+        organy = self.pripoj_data(Organy(stahni=False, *args, **kwargs), jmeno='organy')
+        typ_funkce = self.pripoj_data(TypFunkce(stahni=False, *args, **kwargs), jmeno='typ_funkce')
         self.nacti_funkce()
 
         # Zúžení
@@ -383,7 +382,6 @@ class Osoby(OsobaExtraMixin, OsobyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame
 
         if stahni == True:
             self.stahni_zip_data('poslanci')
-        kwargs['stahni'] = False
 
         self.nacti_osoby()
         self.nacti_osoba_extra()
@@ -433,12 +431,12 @@ class ZarazeniOsoby(ZarazeniOsobyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame)
 
         if stahni == True:
             self.stahni_zip_data('poslanci')
-        kwargs['stahni'] = False
 
-        osoby = self.pripoj_data(Osoby(*args, **kwargs), jmeno='osoby')
-        organy = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
+        organy = self.pripoj_data(Organy(stahni=False, *args, **kwargs), jmeno='organy')
         self.snemovna = organy.snemovna
-        funkce = self.pripoj_data(Funkce(*args, **kwargs), jmeno='funkce')
+        funkce = self.pripoj_data(Funkce(stahni=False, *args, **kwargs), jmeno='funkce')
+
         self.nacti_zarazeni_osoby()
 
         # Připoj Osoby
@@ -545,10 +543,9 @@ class Poslanci(PoslanciMixin, PoslanciPkgpsMixin, SnemovnaZipDataMixin, Snemovna
 
         if stahni == True:
             self.stahni_zip_data('poslanci')
-        kwargs['stahni'] = False
 
-        zarazeni_osoby = self.pripoj_data(ZarazeniOsoby(*args, **kwargs), jmeno='zarazeni_osoby')
-        organy = self.pripoj_data(Organy(*args, **kwargs), jmeno='organy')
+        zarazeni_osoby = self.pripoj_data(ZarazeniOsoby(stahni=False, *args, **kwargs), jmeno='zarazeni_osoby')
+        organy = self.pripoj_data(Organy(stahni=False, *args, **kwargs), jmeno='organy')
         self.snemovna = organy.snemovna
 
         self.nacti_poslanci_pkgps()
