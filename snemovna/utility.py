@@ -133,7 +133,6 @@ def pretypuj(df, header, name=None, inplace=False):
             elif isinstance(header[col], MItem):
                 new_df[col] = df[col].astype(header[col].typ)
             else:
-                log.error(type(header[col]))
                 log.error(f"Chyba: Neznámý formát přetypování. Sloupec '{col}' nebylo možné přetypovat.")
     return new_df
 

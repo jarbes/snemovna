@@ -26,9 +26,9 @@ from snemovna.setup_logger import log
 # Textová podoba stenozáznamů není součástí oficiálních tabulek PS, vytváříme je web scrapingem.
 # Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
-class StenoTexty(TabulkaStenotextyMixin, SnemovnaStenotextyDataMixin, SnemovnaDataFrame):
+class StenoTexty(TabulkaStenotextyMixin, SnemovnaDataFrame):
 
-    def __init__(self, stahni=True, limit=-1,  *args, **kwargs):
+    def __init__(self, stahni=True, limit=-1, soubezne_stahovani_max=12, soubezne_zpracovani_max=-1, *args, **kwargs):
         log.debug('--> StenoTexty')
 
         stn = Steno(stahni, *args, **kwargs)
@@ -38,6 +38,10 @@ class StenoTexty(TabulkaStenotextyMixin, SnemovnaStenotextyDataMixin, SnemovnaDa
         kwargs['volebni_obdobi'] = volebni_obdobi
 
         super(StenoTexty, self).__init__(*args, **kwargs)
+
+        self.parameters['limit'] = limit
+        self.parameters['soubezne_stahovani_max'] = soubezne_stahovani_max
+        self.parameters['soubezne_zpracovani_max'] = soubezne_zpracovani_max
 
         steno = self.pripoj_data(stn, jmeno='steno')
 
@@ -105,7 +109,7 @@ class StenoTexty(TabulkaStenotextyMixin, SnemovnaStenotextyDataMixin, SnemovnaDa
         for id_prebehlik in prebehlici.index:
             for idx, row in zarazeni_osoby[ snemovna_cond & (zarazeni_osoby.id_osoba == id_prebehlik)].iterrows():
                 od, do, id_organ, zkratka =  row['od_o'], row['do_o'], row['id_organ'], row['zkratka']
-                print(id_prebehlik, od, do, id_organ, zkratka)
+                #print(id_prebehlik, od, do, id_organ, zkratka)
                 self.tbl['steno_texty'].zkratka.mask((self.tbl['steno_texty'].date >= od) & (self.tbl['steno_texty'].date <= do) & (self.tbl['steno_texty'].id_osoba == id_prebehlik), zkratka, inplace=True)
 
         to_drop = ['zmena', 'id_org']

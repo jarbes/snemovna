@@ -1,9 +1,7 @@
 import re
 from collections import namedtuple
 
-from datetime import datetime
-
-import numpy as np
+#import numpy as np
 import pandas as pd
 
 from html2text import html2text
@@ -12,13 +10,12 @@ from bs4 import BeautifulSoup, NavigableString
 import os
 import requests
 from time import time
+from pathlib import Path
 from urllib.parse import urlparse
 from joblib import Parallel, delayed, cpu_count
-#from multiprocessing.pool import ThreadPool
 
-from snemovna.Helpers import *
-#from snemovna.PoslanciOsoby import *
-#from snemovna.Stenozaznamy import *
+from snemovna.Helpers import MItem
+from snemovna.utility import pretypuj
 
 from snemovna.setup_logger import log
 
@@ -28,8 +25,6 @@ Cas = namedtuple('Cas', ['typ', 'hodina', 'minuta'])
 
 class TabulkaStenotextyMixin(object):
     def nacti_steno_texty(self):
-        # TODO: This is a duplicate, the header should be defined on ly at one place
-        path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
         header = {
             'text': MItem('string', 'Text promluvy s odstraněnými poznámkami (tj. bez textu v závorkách atp.)'),
             'text_s_poznamkami': MItem('string', 'Text promluvy včetně poznámek'),
@@ -43,12 +38,12 @@ class TabulkaStenotextyMixin(object):
             'typ_casu': MItem('string', 'Typ času extrahovaného ze stenozáznamu [začátek, přerušení pokračování, ukončení, obecný].'),
             "date": MItem('string', 'Datum extrahované ze stenozáznamu.')
         }
+        path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
         df = pd.read_pickle(path)
         self.rozsir_meta(header, tabulka='steno_testy', vlastni=False)
 
         self.tbl['steno_texty'], self.tbl['_steno_texty'] = df, df
 
-class SnemovnaStenotextyDataMixin(object):
     def stahni_html_data(self):
         path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
         # scraping z webu
@@ -90,9 +85,9 @@ class SnemovnaStenotextyDataMixin(object):
                     poznamka = None
 
                 if len(r['meta']['je_poznamka']) > 0:
-                    je_poznamka = r['meta']['je_poznamka'][0]
+                    je_poznamka_item = r['meta']['je_poznamka'][0]
                 else:
-                    je_poznamka = False
+                    je_poznamka_item = False
 
                 if len(r['meta']['cas']) > 0:
                     c = f"{r['meta']['cas'][0].hodina}:{r['meta']['cas'][0].minuta}"
@@ -107,27 +102,12 @@ class SnemovnaStenotextyDataMixin(object):
                 id_osoby.append(id_osoba)
                 id_reci.append(id_rec)
                 poznamky.append(poznamka)
-                je_poznamka.append(r['meta']['je_poznamka'])
+                je_poznamka.append(je_poznamka_item)
                 cas.append(c)
                 typ_casu.append(tc)
                 dates.append(r['meta']['date'])
 
         df = pd.DataFrame({'text': texty, 'text_s_poznamkami': texty_s_poznamkami, 'schuze': schuze, 'turn': turns, 'id_osoba': id_osoby, "id_rec": id_reci, 'poznamka': poznamky, 'je_poznamka': je_poznamka, 'cas': cas, 'typ_casu': typ_casu, "date": dates})
-
-        header1 = {
-            'text': 'string',
-            'text_s_poznamkami': 'string',
-            'schuze': 'Int64',
-            'turn': 'Int64',
-            'id_osoba': 'Int64',
-            'id_rec': 'Int64',
-            'poznamka': 'object',
-            'je_poznamka': bool,
-            'cas': 'string',
-            'typ_casu': 'string',
-            #'date': 'string'
-        }
-        df = pretypuj(df, header1, 'steno_texty [stage1]')
 
         return df
 
@@ -140,18 +120,29 @@ class SnemovnaStenotextyDataMixin(object):
             "schuze": item[0],
             "turn": item[1]
         } for item in self.tbl['steno'].groupby(['schuze', 'turn']).groups.keys()]# Do we need some kind of sort here?
+
+        if ('limit' in self.parameters) and (self.parameters['limit'] != -1):
+            args = args[:self.parameters['limit']]
+
         paths = [item['path'] for item in args]
 
         log.info(f"K zpracování: {len(paths)} souborů.")
         #n_jobs = max([12, 3*cpu_count()])
-        results = Parallel(n_jobs=-1, verbose=1, backend="threading")(delayed(self.zpracuj_stenozaznam)(item) for item in paths)
+        #results = Parallel(n_jobs=-1, verbose=1, backend="threading")(delayed(self.zpracuj_stenozaznam)(item) for item in paths)
+        results = Parallel(n_jobs=self.parameters['soubezne_zpracovani_max'], verbose=1, backend="threading")(delayed(self.zpracuj_stenozaznam)(item) for item in paths)
 
         return results, args
 
     def stahni_steno_texty(self):
         args = [["https://" + self.cesta(item[0], item[1]), self.parameters['data_dir'] ] for item in self.tbl['steno'].groupby(['schuze', 'turn']).groups.keys()]
+
+        if ('limit' in self.parameters) and (self.parameters['limit'] != -1):
+            args = args[:self.parameters['limit']]
+
         log.info(f"K stažení: {len(args)} souborů.")
-        n_jobs = max([12, 3*cpu_count()])
+        #n_jobs = max([12, 3*cpu_count()])
+        #n_jobs = max([self.parameters['soubezne_stahovani_max'], 3*cpu_count()])
+        n_jobs = self.parameters['soubezne_stahovani_max']
         Parallel(n_jobs=n_jobs, verbose=1, backend="threading")(delayed(self.stahni_url)(item) for item in args)
 
     def stahni_url(self, arg):
