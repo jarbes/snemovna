@@ -36,13 +36,17 @@ def download_and_unzip(url, zip_file_name, data_dir):
 #######################################################################
 # Popis dat v pandas tabulkách
 
-def popis_tabulku(df, meta=None, schovej=[]):
+def popis_tabulku(frame, meta=None, schovej=[]):
     """
     Popiš vlastnosti tabulky
     """
+    df = frame.select_dtypes(exclude=['object'])
+
     print(f"Počet řádků v tabulce: {df.index.size}")
     print()
 
+    print(f"Nenalyzované sloupce: {list(set(frame.columns) - set(df.columns))}")
+    print()
     uniq = df.nunique()
     is_null = df.isnull().sum()
     not_null = len(df) - is_null
