@@ -22,117 +22,21 @@ from snemovna.Stenozaznamy import *
 
 from snemovna.setup_logger import log
 
-Recnik = namedtuple("Recnik", ['id_rec', 'id_osoba'])
+Rec = namedtuple("Rec", ['id_rec', 'id_osoba'])
 Promluva = namedtuple('Promluva', ["text", "recnik", "rid", "cas_od", "cas_do"])
 Cas = namedtuple('Cas', ['typ', 'hodina', 'minuta'])
 
-
-# Tabulka StenoText
-# Texty nejsou součástí oficiálních tabulek PS, vytváříme je web scrapingem.
-# Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
-
-class StenoTexty(StenoRecnici, OsobyZarazeni):
-
-    def __init__(self, *args, **kwargs):
-        log.debug('--> StenoTexty')
-
-        super(StenoTexty, self).__init__(*args, **kwargs)
-
-        self.paths['steno_text'] = f"{self.data_dir}/steno_texty-{self.volebni_obdobi}.pkl"
-
-        if self.stahni == True:
-            # scraping z webu
-            self.stahni_steno_texty()
-            # parsování html
-            results, args = self.zpracuj_steno_texty()
-            # tvorba pandas tabulky
-            self._steno_texty = self.results2df(results, args)
-            # ulož lokálně výslednou tabulku
-            self._steno_texty.to_pickle(self.paths['steno_text'])
-
-        self.steno_texty, self._steno_texty = self.nacti_steno_texty()
-
-        # Doplneni recnika, který mluvil na konci minulého stenozáznamu (přetahujícího řečníka).
-        # Přetahující řečník nemá v aktuálním stenozáznamu identifikátoir, ale zpravidla (v 99% případů) byl zmíněn v některém z minulých stenozáznamů (turns).
-        # Tento stenozáznam je nutné vyhledat a uložit jeho číslo ('id_turn_surrogate') a číslo řečníka ('id_rec_surrogate').
-        # V joinu se 'steno_rec' se pak použije 'id_rec_surrogate' místo 'id_rec' a 'id_turn_surrogate' místo 'id_turn' pro získání informací o osobě etc.
-        # Pozor: naopak informace o času proslovu jsou navázány na 'turn'.
-        self.steno_texty.loc[self.steno_texty.id_rec.isna(), 'turn_surrogate'] = np.nan
-        self.steno_texty.loc[~self.steno_texty.id_rec.isna(), 'turn_surrogate'] = self.steno_texty.turn
-        self.steno_texty['turn_surrogate'] = self.steno_texty.groupby("schuze")['turn_surrogate'].ffill().astype('Int64')
-        self.steno_texty['id_rec_surrogate'] = self.steno_texty['id_rec']
-        self.steno_texty['id_rec_surrogate'] = self.steno_texty.groupby("schuze")['id_rec_surrogate'].ffill().astype('Int64')
-
-        # připoj osobu ze steno_rec ... we simply add id_osoba to places where it's missing
-        m = pd.merge(left=self.steno_texty, right=self.steno_rec[['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")
-        ids = m[m.id_osoba_x.eq(m.id_osoba_y)].index
-        ne_ids = set(m.index)-set(ids)
-        assert m[m.index.isin(ne_ids) & (~m.id_osoba_x.isna())].size / m[m.index.isin(ne_ids)].size < 0.1 # This is a consistency sanity check
-        m['id_osoba'] = m['id_osoba_y']
-        m['turn'] = m['turn_x']
-        self.steno_texty = m.drop(labels=['id_osoba_x', 'id_osoba_y', 'turn_y', 'turn_x', 'aname'], axis=1)
-
-        # Merge steno_rec
-        suffix = "__steno_rec"
-        self.steno_texty = pd.merge(left=self.steno_texty, right=self.steno_rec, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
-        self.steno_texty = self.steno_texty.drop(labels=['turn__steno_rec'], axis=1) # this inconsistency comes from the 'turn-fix'
-        self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'steno_rec')
-
-        # Merge osoby
-        suffix = "__osoby"
-        self.steno_texty = pd.merge(left=self.steno_texty, right=self.osoby, on='id_osoba', suffixes = ("", suffix), how='left')
-        self.steno_texty = self.drop_by_inconsistency(self.steno_texty, suffix, 0.1, 'steno_texty', 'osoby')
-
-        ## Merge zarazeni_osoby
-        poslanci = self.zarazeni_osoby[(self.zarazeni_osoby.do_o.isna()) & (self.zarazeni_osoby.id_organu==self.id_organu) & (self.zarazeni_osoby.cl_funkce=='členství')] # všichni poslanci
-        strany = self.zarazeni_osoby[(self.zarazeni_osoby.id_osoba.isin(poslanci.id_osoba)) & (self.zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (self.zarazeni_osoby.do_o.isna()) & (self.zarazeni_osoby.cl_funkce=='členství')]
-        self.steno_texty = pd.merge(self.steno_texty, strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
-
-        ## Merge Strana
-        snemovna_id = self.organy[self.organy.nazev_organ_cz=="Poslanecká sněmovna"].sort_values(by="id_organ").iloc[-1].id_organ
-        snemovna_od = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].od_organ).tz_localize("Europe/Prague")
-        snemovna_do = pd.to_datetime(self.organy[self.organy.id_organ == snemovna_id].iloc[0].do_organ).tz_localize("Europe/Prague")
-
-        snemovna_cond = (self.zarazeni_osoby.od_o >= snemovna_od) & (self.zarazeni_osoby.nazev_typ_org_cz == "Klub") & (self.zarazeni_osoby.cl_funkce=='členství')
-        if pd.isnull(snemovna_do) == False:
-            snemovna_cond = snemovna_cond | (self.zarazeni_osoby.do_o >= snemovna_do)
-        s = self.zarazeni_osoby[snemovna_cond].groupby('id_osoba').size().sort_values()
-        prebehlici = s[s > 1]
-        print("prebehlici: ", prebehlici)
-
-        for id_prebehlika in prebehlici.index:
-            for idx, row in self.zarazeni_osoby[ snemovna_cond & (self.zarazeni_osoby.id_osoba == id_prebehlika)].iterrows():
-                od, do, id_organ, zkratka =  row['od_o'], row['do_o'], row['id_organ'], row['zkratka']
-                print(id_prebehlika, od, do, id_organ, zkratka)
-                self.steno_texty.zkratka.mask((self.steno_texty.date >= od) & (self.steno_texty.date <= do) & (self.steno_texty.id_osoba == id_prebehlika), zkratka, inplace=True)
-
-        to_drop = ['zmena', 'id_org']
-        self.steno_texty.drop(labels=to_drop, inplace=True, axis=1)
-
-        self.df = self.steno_texty
-        self.nastav_meta()
-
-        log.debug('<-- StenoTexty')
-
-    def nacti_steno_texty(self):
-        # TODO: This is a duplicate, the header should be defined on ly at one place
-        header = {
-            'text': MItem('string', 'Text promluvy s odstraněnými poznámkami (tj. bez textu v závorkách atp.)'),
-            'text_s_poznamkami': MItem('string', 'Text promluvy včetně poznámek'),
-            'schuze': MItem('Int64', 'Číslo schůze.'),
-            'turn': MItem('Int64', 'Číslo stenozáznamu v rámci schůze.'),
-            'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba.'),
-            "id_rec": MItem('Int64', 'Identifikátor řečníka, viz StenoRecnici: id_rec'),
-            'poznamka': MItem('string', 'Poznámka extrahovaá ze stenozáznamu.'),
-            'je_poznamka': MItem('bool', 'Příznak, že celá promluva je poznámka.'),
-            'cas': MItem('string', "Čas extrahovaný ze stenozáznamu."),
-            'typ_casu': MItem('string', 'Typ času extrahovaného ze stenozáznamu [začátek, přerušení pokračování, ukončení, obecný].'),
-            "date": MItem('string', 'Datum extrahované ze stenozáznamu.')
-        }
-        df = pd.read_pickle(self.paths['steno_text'])
-        self.rozsir_meta(header, tabulka='steno_rec', vlastni=False)
-
-        return df, df
+class SnemovnaStenotextyDataMixin(object):
+    def stahni_html_data(self):
+        path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
+        # scraping z webu
+        self.stahni_steno_texty()
+        # parsování html
+        results, args = self.zpracuj_steno_texty()
+        # tvorba pandas tabulky
+        _steno_texty = self.results2df(results, args)
+        # ulož lokálně výslednou tabulku
+        _steno_texty.to_pickle(path)
 
     def results2df(self, results, args):
         texty = []
@@ -163,8 +67,12 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
                 else:
                     poznamka = None
 
+                if len(r['meta']['je_poznamka']) > 0:
+                    je_poznamka = r['meta']['je_poznamka'][0]
+                else:
+                    je_poznamka = False
+
                 if len(r['meta']['cas']) > 0:
-                    #c = self.formatuj_cas(r['meta']['cas'][0].hodina, r['meta']['cas'][0].minuta)
                     c = f"{r['meta']['cas'][0].hodina}:{r['meta']['cas'][0].minuta}"
                     tc = r['meta']['cas'][0].typ
                 else:
@@ -184,7 +92,6 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
 
         df = pd.DataFrame({'text': texty, 'text_s_poznamkami': texty_s_poznamkami, 'schuze': schuze, 'turn': turns, 'id_osoba': id_osoby, "id_rec": id_reci, 'poznamka': poznamky, 'je_poznamka': je_poznamka, 'cas': cas, 'typ_casu': typ_casu, "date": dates})
 
-        # object se nedaří přetypovat rovnou na Int64, proto ho nejdřív přetypujeme na float
         header1 = {
             'text': 'string',
             'text_s_poznamkami': 'string',
@@ -200,7 +107,6 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
         }
         df = pretypuj(df, header1, 'steno_texty [stage1]')
 
-
         return df
 
     def cesta(self, schuze, turn):
@@ -208,10 +114,10 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
 
     def zpracuj_steno_texty(self):
         args = [{
-            "path": self.data_dir + '/' + self.cesta(item[0], item[1]),
+            "path": self.parameters['data_dir'] + '/' + self.cesta(item[0], item[1]),
             "schuze": item[0],
             "turn": item[1]
-        } for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]# Do we need some kind of sort here?
+        } for item in self.tbl['steno'].groupby(['schuze', 'turn']).groups.keys()]# Do we need some kind of sort here?
         paths = [item['path'] for item in args]
 
         log.info(f"K zpracování: {len(paths)} souborů.")
@@ -221,7 +127,7 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
         return results, args
 
     def stahni_steno_texty(self):
-        args = [["https://" + self.cesta(item[0], item[1]), self.data_dir ] for item in self.steno.groupby(['schuze', 'turn']).groups.keys()]
+        args = [["https://" + self.cesta(item[0], item[1]), self.parameters['data_dir'] ] for item in self.tbl['steno'].groupby(['schuze', 'turn']).groups.keys()]
         log.info(f"K stažení: {len(args)} souborů.")
         n_jobs = max([12, 3*cpu_count()])
         Parallel(n_jobs=n_jobs, verbose=1, backend="threading")(delayed(self.stahni_url)(item) for item in args)
@@ -312,7 +218,7 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
                 m = re.match(r'\/sqw\/detail.sqw\?id\=([0-9]+)$', tag.attrs.get('href'))
                 if m:
                     id_osoba = m.groups()[0]
-            return Recnik(id_rec=id_rec, id_osoba=id_osoba)
+            return Rec(id_rec=id_rec, id_osoba=id_osoba)
         return None
 
     #https://www.psp.cz/sqw/historie.sqw?T=922&O=8
@@ -462,4 +368,118 @@ class StenoTexty(StenoRecnici, OsobyZarazeni):
             rows.append(row)
             #log.debug(f"ROW: {row}")
         return rows
+
+
+
+class TabulkaStenotextyMixin(object):
+    def nacti_steno_texty(self):
+        # TODO: This is a duplicate, the header should be defined on ly at one place
+        path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
+        header = {
+            'text': MItem('string', 'Text promluvy s odstraněnými poznámkami (tj. bez textu v závorkách atp.)'),
+            'text_s_poznamkami': MItem('string', 'Text promluvy včetně poznámek'),
+            'schuze': MItem('Int64', 'Číslo schůze.'),
+            'turn': MItem('Int64', 'Číslo stenozáznamu v rámci schůze.'),
+            'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba.'),
+            "id_rec": MItem('Int64', 'Identifikátor řečníka, viz StenoRecnici: id_rec'),
+            'poznamka': MItem('string', 'Poznámka extrahovaá ze stenozáznamu.'),
+            'je_poznamka': MItem('bool', 'Příznak, že celá promluva je poznámka.'),
+            'cas': MItem('string', "Čas extrahovaný ze stenozáznamu."),
+            'typ_casu': MItem('string', 'Typ času extrahovaného ze stenozáznamu [začátek, přerušení pokračování, ukončení, obecný].'),
+            "date": MItem('string', 'Datum extrahované ze stenozáznamu.')
+        }
+        df = pd.read_pickle(path)
+        self.rozsir_meta(header, tabulka='steno_testy', vlastni=False)
+
+        self.tbl['steno_texty'], self.tbl['_steno_texty'] = df, df
+
+# Tabulka StenoText
+# Texty nejsou součástí oficiálních tabulek PS, vytváříme je web scrapingem.
+# Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
+
+class StenoTexty(TabulkaStenotextyMixin, SnemovnaStenotextyDataMixin, SnemovnaDataFrame):
+
+    def __init__(self, stahni=True, *args, **kwargs):
+        log.debug('--> StenoTexty')
+
+        stn = Steno(stahni, *args, **kwargs)
+
+        organy = Organy(stahni=False, *args, **kwargs)
+        volebni_obdobi = organy.volebni_obdobi
+        kwargs['volebni_obdobi'] = volebni_obdobi
+
+        super(StenoTexty, self).__init__(*args, **kwargs)
+
+        steno = self.pripoj_data(stn, jmeno='steno')
+
+        if stahni == True:
+            self.stahni_html_data()
+
+        self.snemovna = organy.snemovna
+        steno_recnici = self.pripoj_data(StenoRecnici(stahni=False, *args, **kwargs), jmeno='steno_recnici')
+        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
+        zarazeni_osoby = self.pripoj_data(ZarazeniOsoby(stahni=False, *args, **kwargs), jmeno='zarazeni_osoby')
+
+        self.nacti_steno_texty()
+
+        # Doplneni recnika, který mluvil na konci minulého stenozáznamu (přetahujícího řečníka).
+        # Přetahující řečník nemá v aktuálním stenozáznamu identifikátoir, ale zpravidla (v 99% případů) byl zmíněn v některém z minulých stenozáznamů (turns).
+        # Tento stenozáznam je nutné vyhledat a uložit jeho číslo ('id_turn_surrogate') a číslo řečníka ('id_rec_surrogate').
+        # V joinu se 'steno_rec' se pak použije 'id_rec_surrogate' místo 'id_rec' a 'id_turn_surrogate' místo 'id_turn' pro získání informací o osobě etc.
+        # Pozor: naopak informace o času proslovu jsou navázány na 'turn'.
+        self.tbl['steno_texty'].loc[self.tbl['steno_texty'].id_rec.isna(), 'turn_surrogate'] = np.nan
+        self.tbl['steno_texty'].loc[~self.tbl['steno_texty'].id_rec.isna(), 'turn_surrogate'] = self.tbl['steno_texty'].turn
+        self.tbl['steno_texty']['turn_surrogate'] = self.tbl['steno_texty'].groupby("schuze")['turn_surrogate'].ffill().astype('Int64')
+        self.tbl['steno_texty']['id_rec_surrogate'] = self.tbl['steno_texty']['id_rec']
+        self.tbl['steno_texty']['id_rec_surrogate'] = self.tbl['steno_texty'].groupby("schuze")['id_rec_surrogate'].ffill().astype('Int64')
+
+        # připoj osobu ze steno_rec ... we simply add id_osoba to places where it's missing
+        m = pd.merge(left=self.tbl['steno_texty'], right=steno_recnici[['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")
+        ids = m[m.id_osoba_x.eq(m.id_osoba_y)].index
+        ne_ids = set(m.index)-set(ids)
+        assert m[m.index.isin(ne_ids) & (~m.id_osoba_x.isna())].size / m[m.index.isin(ne_ids)].size < 0.1 # This is a consistency sanity check
+        m['id_osoba'] = m['id_osoba_y']
+        m['turn'] = m['turn_x']
+        self.tbl['steno_texty'] = m.drop(labels=['id_osoba_x', 'id_osoba_y', 'turn_y', 'turn_x', 'aname'], axis=1)
+
+        # Merge steno_recnici
+        suffix = "__steno_recnici"
+        self.tbl['steno_texty'] = pd.merge(left=self.tbl['steno_texty'], right=steno_recnici, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
+        self.tbl['steno_texty'] = self.tbl['steno_texty'].drop(labels=['turn__steno_recnici'], axis=1) # this inconsistency comes from the 'turn-fix'
+        self.drop_by_inconsistency(self.tbl['steno_texty'], suffix, 0.1, 'steno_texty', 'steno_recnici', inplace=True)
+
+        # Merge osoby
+        suffix = "__osoby"
+        self.tbl['steno_texty'] = pd.merge(left=self.tbl['steno_texty'], right=osoby, on='id_osoba', suffixes = ("", suffix), how='left')
+        self.drop_by_inconsistency(self.tbl['steno_texty'], suffix, 0.1, 'steno_texty', 'osoby', inplace=True)
+
+        ## Merge zarazeni_osoby
+        poslanci = zarazeni_osoby[(zarazeni_osoby.do_o.isna()) & (zarazeni_osoby.id_organ==self.snemovna.id_organ) & (zarazeni_osoby.cl_funkce=='členství')] # všichni poslanci
+        strany = zarazeni_osoby[(zarazeni_osoby.id_osoba.isin(poslanci.id_osoba)) & (zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (zarazeni_osoby.do_o.isna()) & (zarazeni_osoby.cl_funkce=='členství')]
+        self.tbl['steno_texty'] = pd.merge(self.tbl['steno_texty'], strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
+
+        ## Merge Strana
+        snemovna_id = organy[organy.nazev_organ_cz=="Poslanecká sněmovna"].sort_values(by="id_organ").iloc[-1].id_organ
+        snemovna_od = pd.to_datetime(organy[organy.id_organ == snemovna_id].iloc[0].od_organ)#.tz_localize(self.tzn)
+        snemovna_do = pd.to_datetime(organy[organy.id_organ == snemovna_id].iloc[0].do_organ)#.tz_localize(self.tzn)
+
+        snemovna_cond = (zarazeni_osoby.od_o >= snemovna_od) & (zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (zarazeni_osoby.cl_funkce=='členství')
+        if pd.isnull(snemovna_do) == False:
+            snemovna_cond = snemovna_cond | (zarazeni_osoby.do_o >= snemovna_do)
+        s = zarazeni_osoby[snemovna_cond].groupby('id_osoba').size().sort_values()
+        prebehlici = s[s > 1]
+        #print("prebehlici: ", prebehlici)
+
+        for id_prebehlik in prebehlici.index:
+            for idx, row in zarazeni_osoby[ snemovna_cond & (zarazeni_osoby.id_osoba == id_prebehlik)].iterrows():
+                od, do, id_organ, zkratka =  row['od_o'], row['do_o'], row['id_organ'], row['zkratka']
+                print(id_prebehlik, od, do, id_organ, zkratka)
+                self.tbl['steno_texty'].zkratka.mask((self.tbl['steno_texty'].date >= od) & (self.tbl['steno_texty'].date <= do) & (self.tbl['steno_texty'].id_osoba == id_prebehlik), zkratka, inplace=True)
+
+        to_drop = ['zmena', 'id_org']
+        self.tbl['steno_texty'].drop(labels=to_drop, inplace=True, axis=1)
+
+        self.nastav_dataframe(self.tbl['steno_texty'])
+
+        log.debug('<-- StenoTexty')
 
