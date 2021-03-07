@@ -9,16 +9,16 @@ from snemovna.TabulkySchuze import TabulkaSchuzeMixin, TabulkaSchuzeStavMixin, T
 from snemovna.setup_logger import log
 
 
-class SchuzeBase(SnemovnaZipDataMixin, SnemovnaDataFrame):
+class SchuzeBase(Organy, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug("--> SchuzeBase")
-        super().__init__(*args, **kwargs)
+        super().__init__(stahni=stahni, *args, **kwargs)
         if stahni == True:
             self.stahni_zip_data("schuze")
         log.debug("<-- SchuzeBase")
 
 
-class Schuze(TabulkaSchuzeMixin, TabulkaSchuzeStavMixin, Organy, SchuzeBase):
+class Schuze(TabulkaSchuzeMixin, TabulkaSchuzeStavMixin, SchuzeBase):
     def __init__(self, *args, **kwargs):
         log.debug('--> Schuze')
 

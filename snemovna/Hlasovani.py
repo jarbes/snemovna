@@ -28,7 +28,7 @@ class HlasovaniBase(Organy):
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug("--> HlasovaniBase")
 
-        super().__init__(*args, **kwargs)
+        super().__init__(stahni=stahni, *args, **kwargs)
 
         if stahni == True:
             self.stahni_zip_data(f"hl-{self.volebni_obdobi}ps")

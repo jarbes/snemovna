@@ -11,7 +11,7 @@ from snemovna.setup_logger import log
 class StenoBase(Organy, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, stahni=True, *args, **kwargs):
         log.debug("--> StenoBase")
-        super().__init__(*args, **kwargs)
+        super().__init__(stahni=stahni, *args, **kwargs)
         if stahni == True:
             self.stahni_zip_data("steno")
         log.debug("<-- StenoBase")
