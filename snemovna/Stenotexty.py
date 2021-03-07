@@ -19,39 +19,27 @@ import pandas as pd
 from snemovna.Snemovna import *
 from snemovna.PoslanciOsoby import *
 from snemovna.Stenozaznamy import *
-from snemovna.TabulkaStenotexty import *
+from snemovna.TabulkyStenotexty import *
 
 from snemovna.setup_logger import log
 
 # Textová podoba stenozáznamů není součástí oficiálních tabulek PS, vytváříme je web scrapingem.
 # Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
-class StenoTexty(TabulkaStenotextyMixin, SnemovnaDataFrame):
+
+class StenoTexty(TabulkaStenotextyMixin, StenoRecnici, Steno, ZarazeniOsoby, Organy, Osoby, SnemovnaDataFrame):
 
     def __init__(self, stahni=True, limit=-1, soubezne_stahovani_max=12, soubezne_zpracovani_max=-1, *args, **kwargs):
         log.debug('--> StenoTexty')
 
-        stn = Steno(stahni, *args, **kwargs)
-
-        organy = Organy(stahni=False, *args, **kwargs)
-        volebni_obdobi = organy.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
-        super(StenoTexty, self).__init__(*args, **kwargs)
+        super().__init__(stahni=stahni, *args, **kwargs)
 
         self.parameters['limit'] = limit
         self.parameters['soubezne_stahovani_max'] = soubezne_stahovani_max
         self.parameters['soubezne_zpracovani_max'] = soubezne_zpracovani_max
 
-        steno = self.pripoj_data(stn, jmeno='steno')
-
         if stahni == True:
-            self.stahni_html_data()
-
-        self.snemovna = organy.snemovna
-        steno_recnici = self.pripoj_data(StenoRecnici(stahni=False, *args, **kwargs), jmeno='steno_recnici')
-        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
-        zarazeni_osoby = self.pripoj_data(ZarazeniOsoby(stahni=False, *args, **kwargs), jmeno='zarazeni_osoby')
+            self.stahni_steno_texty()
 
         self.nacti_steno_texty()
 
@@ -70,7 +58,7 @@ class StenoTexty(TabulkaStenotextyMixin, SnemovnaDataFrame):
         self.meta['id_rec_surrogate'] =  dict(popis='Identifikace řečníka na základě zpětmého hledání v stenozáznamech (turn).', tabulka='df', vlastni=True)
 
         # připoj osobu ze steno_rec ... we simply add id_osoba to places where it's missing
-        m = pd.merge(left=self.tbl['steno_texty'], right=steno_recnici[['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")
+        m = pd.merge(left=self.tbl['steno_texty'], right=self.tbl['steno_recnici'][['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")
         ids = m[m.id_osoba_x.eq(m.id_osoba_y)].index
         ne_ids = set(m.index)-set(ids)
         assert m[m.index.isin(ne_ids) & (~m.id_osoba_x.isna())].size / m[m.index.isin(ne_ids)].size < 0.1 # This is a consistency sanity check
@@ -80,21 +68,23 @@ class StenoTexty(TabulkaStenotextyMixin, SnemovnaDataFrame):
 
         # Merge steno_recnici
         suffix = "__steno_recnici"
-        self.tbl['steno_texty'] = pd.merge(left=self.tbl['steno_texty'], right=steno_recnici, left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
+        self.tbl['steno_texty'] = pd.merge(left=self.tbl['steno_texty'], right=self.tbl['steno_recnici'], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=['schuze', 'turn', 'aname'], suffixes = ("", suffix), how='left')
         self.tbl['steno_texty'] = self.tbl['steno_texty'].drop(labels=['turn__steno_recnici'], axis=1) # this inconsistency comes from the 'turn-fix'
         self.drop_by_inconsistency(self.tbl['steno_texty'], suffix, 0.1, 'steno_texty', 'steno_recnici', inplace=True)
 
         # Merge osoby
         suffix = "__osoby"
-        self.tbl['steno_texty'] = pd.merge(left=self.tbl['steno_texty'], right=osoby, on='id_osoba', suffixes = ("", suffix), how='left')
+        self.tbl['steno_texty'] = pd.merge(left=self.tbl['steno_texty'], right=self.tbl['osoby'], on='id_osoba', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.tbl['steno_texty'], suffix, 0.1, 'steno_texty', 'osoby', inplace=True)
 
         ## Merge zarazeni_osoby
+        zarazeni_osoby = self.tbl['zarazeni_osoby']
         poslanci = zarazeni_osoby[(zarazeni_osoby.do_o.isna()) & (zarazeni_osoby.id_organ==self.snemovna.id_organ) & (zarazeni_osoby.cl_funkce=='členství')] # všichni poslanci
         strany = zarazeni_osoby[(zarazeni_osoby.id_osoba.isin(poslanci.id_osoba)) & (zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (zarazeni_osoby.do_o.isna()) & (zarazeni_osoby.cl_funkce=='členství')]
         self.tbl['steno_texty'] = pd.merge(self.tbl['steno_texty'], strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
 
         ## Merge Strana
+        organy = self.tbl['organy']
         snemovna_id = organy[organy.nazev_organ_cz=="Poslanecká sněmovna"].sort_values(by="id_organ").iloc[-1].id_organ
         snemovna_od = pd.to_datetime(organy[organy.id_organ == snemovna_id].iloc[0].od_organ)#.tz_localize(self.tzn)
         snemovna_do = pd.to_datetime(organy[organy.id_organ == snemovna_id].iloc[0].do_organ)#.tz_localize(self.tzn)
@@ -112,7 +102,7 @@ class StenoTexty(TabulkaStenotextyMixin, SnemovnaDataFrame):
                 #print(id_prebehlik, od, do, id_organ, zkratka)
                 self.tbl['steno_texty'].zkratka.mask((self.tbl['steno_texty'].date >= od) & (self.tbl['steno_texty'].date <= do) & (self.tbl['steno_texty'].id_osoba == id_prebehlik), zkratka, inplace=True)
 
-        to_drop = ['zmena', 'id_org']
+        to_drop = ['zmena']
         self.tbl['steno_texty'].drop(labels=to_drop, inplace=True, axis=1)
 
         self.nastav_dataframe(self.tbl['steno_texty'])

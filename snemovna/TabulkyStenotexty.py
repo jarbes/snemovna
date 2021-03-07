@@ -44,10 +44,10 @@ class TabulkaStenotextyMixin(object):
 
         self.tbl['steno_texty'], self.tbl['_steno_texty'] = df, df
 
-    def stahni_html_data(self):
+    def stahni_steno_texty(self):
         path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
         # scraping z webu
-        self.stahni_steno_texty()
+        self.stahni_html_data()
         # parsování html
         results, args = self.zpracuj_steno_texty()
         # tvorba pandas tabulky
@@ -133,7 +133,7 @@ class TabulkaStenotextyMixin(object):
 
         return results, args
 
-    def stahni_steno_texty(self):
+    def stahni_html_data(self):
         args = [["https://" + self.cesta(item[0], item[1]), self.parameters['data_dir'] ] for item in self.tbl['steno'].groupby(['schuze', 'turn']).groups.keys()]
 
         if ('limit' in self.parameters) and (self.parameters['limit'] != -1):

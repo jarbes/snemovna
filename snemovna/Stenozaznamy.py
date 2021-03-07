@@ -1,59 +1,34 @@
-from snemovna.Snemovna import *
-from snemovna.PoslanciOsoby import *
-from snemovna.Schuze import *
+import pandas as pd
 
+from snemovna.Snemovna import SnemovnaZipDataMixin, SnemovnaDataFrame
+from snemovna.PoslanciOsoby import Osoby, Organy
+#from snemovna.Schuze import *
+from snemovna.TabulkyStenozaznamy import TabulkaStenoMixin, TabulkaStenoBodMixin, TabulkaStenoRecniciMixin
 from snemovna.setup_logger import log
 
 # Stenozáznamy jsou těsnopisecké záznamy jednání Poslanecké sněmovny a jejích orgánů. V novějších volebních období obsahují časový úsek řádově 10 minut (případně mimo doby přerušení a podobně). Jsou číslovány v číselné řadě od začátku schůze.
 
+class StenoBase(Organy, SnemovnaZipDataMixin, SnemovnaDataFrame):
+    def __init__(self, stahni=True, *args, **kwargs):
+        log.debug("--> StenoBase")
+        super().__init__(*args, **kwargs)
+        if stahni == True:
+            self.stahni_zip_data("steno")
+        log.debug("<-- StenoBase")
 
 # Tabulka steno
 # Obsahuje záznamy o jednotlivých stenozáznamech (turnech). Položky od_t a do_t nemusí ve všech případech obsahovat správná data, zvláště v případech písařských chyb a obvykle se v dohledné době opraví.
 
-class TabulkaStenoMixin(object):
-    def nacti_steno(self):
-        path = f"{self.parameters['data_dir']}/steno.unl"
-        header = {
-            'id_steno': MItem('Int64', 'Identifikátor stenozáznamu'),
-            'id_org': MItem('Int64', 'Identifikátor orgánu stenozáznamu (v případě PS je to volební období), viz Organy:id_organ.'),
-            'schuze': MItem('Int64', 'Číslo schůze.'),
-            'turn': MItem('Int64', 'Číslo stenozáznamu (turn). Pokud číselná řada je neúplná, tj. obsahuje mezery, pak chybějící obsahují záznam z neveřejného jednání. V novějších volebních období se i v těchto případech "stenozáznamy" vytvářejí, ale obsahují pouze informaci o neveřejném jednání.'),
-            'od_steno': MItem('string', 'Datum začátku stenozáznamu.'),
-            'jd': MItem('Int64', 'Číslo jednacího dne v rámci schůze (používá se např. při konstrukci URL na index stenozáznamu dle dnů).'),
-            'od_t': MItem('Int64', 'Čas začátku stenozáznamu v minutách od začátku kalendářního dne; pokud je null či menší než nula, není známo. Tj. převod na čas typu H:M je pomocí H = div(od_t, 60), M = mod(od_t, 60).'),
-            'do_t': MItem('Int64', 'Čas konce stenozáznamu v minutách od začátku kalendářního dne; pokud je null či menší než nula, není známo. V některých případech může být od_t == do_t; v některých případech může být i od_t > do_t -- platné pouze v případě, že během stena dojde k změně kalendářního dne (například 23:50 - 00:00).'),
-        }
-
-        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'steno')
-        self.rozsir_meta(header, tabulka='steno', vlastni=False)
-
-        # TODO: zkombinul od_steno a od_t !!!
-        # Přidej sloupec 'od_schuze' typu datetime
-        df['od_steno'] = pd.to_datetime(df['od_steno'], format='%Y-%m-%d')
-        df['od_steno'] = df['od_steno'].dt.tz_localize(self.tzn)
-
-        self.tbl['steno'], self.tbl['_steno'] = df, _df
-
-class Steno(TabulkaStenoMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
+class Steno(TabulkaStenoMixin, StenoBase):
+    def __init__(self, *args, **kwargs):
         log.debug('--> Steno')
 
-        org = Organy(stahni, *args, **kwargs)
-        volebni_obdobi = org.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
-        super(Steno, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data("steno")
-
-        organy = self.pripoj_data(org, jmeno='organy')
+        super().__init__(*args, **kwargs)
 
         self.nacti_steno()
 
-        id_organ_dle_volebniho_obdobi = organy[(organy.nazev_organ_cz == 'Poslanecká sněmovna') & (organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.tbl['steno'] = self.tbl['steno'][self.tbl['steno'].id_org == id_organ_dle_volebniho_obdobi]
+        if self.volebni_obdobi != -1:
+            self.tbl['steno'] = self.tbl['steno'][self.tbl['steno'].id_organ == self.snemovna.id_organ]
 
         self.nastav_dataframe(self.tbl['steno'])
 
@@ -61,46 +36,21 @@ class Steno(TabulkaStenoMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 # Tabulka steno_bod
 # Obsahuje záznamy o začátku či pokračování projednávání bodu schůze. Nelze úplně předpokládat, že text stenozáznamu mezi dvěma po sobě následujícími začátky projednávání bodů pořadu schůze budou obsahovat pouze jednání o prvním bodu, tj. projednávání bodu může skončit a poté může následovat procedurální jednání či vystoupení mimo body pořadu schůze.
 
-class TabulkaStenoBodMixin(object):
-    def nacti_steno_bod(self):
-        path = f"{self.parameters['data_dir']}/steno_bod.unl"
-        header = {
-                'id_steno': MItem('Int64', 'Identifikátor stenozáznamu, viz steno:id_steno.'),
-                'aname': MItem('Int64', 'Pozice v indexu jednacího dne.'),
-                'id_bod': MItem('Int64', 'Identifikace bodu pořadu schůze, viz bod_schuze:id_bod. Je-li null či 0, pak pro daný úsek stenozáznamů není známo číslo bodu (např. každé přerušení schůze znamená při automatickém zpracování neznámé číslo bodu).')
-        }
-
-        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'steno_bod')
-        self.rozsir_meta(header, tabulka='steno_bod', vlastni=False)
-
-        self.tbl['steno_bod'], self.tbl['_steno_bod'] = df, _df
-
-class StenoBod(TabulkaStenoBodMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
+class StenoBod(TabulkaStenoBodMixin, Steno):
+    def __init__(self, *args, **kwargs):
         log.debug('--> StenoBod')
 
-        org = Organy(stahni, *args, **kwargs)
-        volebni_obdobi = org.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
-        super(StenoBod, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data("steno")
-
-        steno = self.pripoj_data(Steno(stahni=False, *args, **kwargs), jmeno='steno')
-        organy = self.pripoj_data(org, jmeno='organy')
+        super().__init__(*args, **kwargs)
 
         self.nacti_steno_bod()
 
         # Merge steno
         suffix = "__steno"
-        self.tbl['steno_bod'] = pd.merge(left=self.tbl['steno_bod'], right=steno, on='id_steno', suffixes = ("", suffix), how='left')
+        self.tbl['steno_bod'] = pd.merge(left=self.tbl['steno_bod'], right=self.tbl['steno'], on='id_steno', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.tbl['steno_bod'], suffix, 0.1, "steno_bod", "steno")
 
-        id_organ_dle_volebniho_obdobi = organy[(organy.nazev_organ_cz == 'Poslanecká sněmovna') & (organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.tbl['steno_bod'] = self.tbl['steno_bod'][self.tbl['steno_bod'].id_org == id_organ_dle_volebniho_obdobi]
+        if self.volebni_obdobi != -1:
+            self.tbl['steno_bod'] = self.tbl['steno_bod'][self.tbl['steno_bod'].id_organ == self.snemovna.id_organ]
 
         self.nastav_dataframe(self.tbl['steno_bod'])
 
@@ -114,60 +64,27 @@ class StenoBod(TabulkaStenoBodMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 # Pokud je druh == 4, tj. předsedající, nemusí to automaticky znamenat, že v rámci jeho vystoupení se bude jednat pouze o řízení schůze - ačkoliv by řídící schůze se měl vyvarovat projevů jiných než k řízení schůze, může se stát, že pokud to nikdo nerozporuje, může vystoupit i s jiným projevem (např. za situace, kdy není k dispozici žádný místopředseda či předseda PS, který by za něj převzal řízení schůze).
 # Záznamy v druh typu ověřeno jsou zkontrolovány na základě automatického vyhledání záznamů o vystoupení, které neodpovídají jejich obvyklému řazení.
 
-class TabulkaStenoRecniciMixin(object):
-    def nacti_steno_recniky(self):
-        path = f"{self.parameters['data_dir']}/rec.unl"
-        header = {
-                'id_steno': MItem('Int64', 'Identifikátor stenozáznamu, viz Steno:id_steno.'),
-                'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba.'),
-                'aname': MItem('Int64', 'Identifikace vystoupení v rámci stenozáznamu.'),
-                'id_bod': MItem('Int64', 'Identifikace bodu pořadu schůze, viz bod_schuze:id_bod. Je-li null či 0, pak pro daný úsek stenozáznamů není známo číslo bodu (např. každé přerušení schůze znamená při automatickém zpracování neznámé číslo bodu).'),
-                'druh__ORIG': MItem('Int64', 'Druh vystoupení řečníka: 0 či null - neznámo, 1 - nezpracováno, 2 - předsedající (ověřeno), 3 - řečník (ověřeno), 4 - předsedající, 5 - řečník.'),
-        }
 
-        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'steno_recnici')
-        self.rozsir_meta(header, tabulka='steno_recnici', vlastni=False)
+class StenoRecnici(TabulkaStenoRecniciMixin, Steno, Osoby):
 
-        mask = { None: 'neznámo', 0: 'neznámo', 1: 'nezpracováno', 2: 'předsedající (ověřeno)',
-            3: 'řečník (ověřeno)', 4: 'předsedající', 5: 'řečník' }
-        df['druh'] = mask_by_values(df.druh__ORIG, mask).astype('string')
-        self.meta['druh'] = dict(popis='Druh vystoupení řečníka.', tabulka='steno_recnici', vlastni=True)
-
-        self.tbl['steno_recnici'], self.tbl['_steno_recnici'] = df, _df
-
-
-class StenoRecnici(TabulkaStenoRecniciMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-
-    def __init__(self, stahni=True, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         log.debug('--> StenoRecnici')
 
-        org = Organy(stahni, *args, **kwargs)
-        volebni_obdobi = org.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
         super(StenoRecnici, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data("steno")
-
-        organy = self.pripoj_data(org, jmeno='organy')
-        steno = self.pripoj_data(Steno(stahni=False, *args, **kwargs), jmeno='steno')
-        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
 
         self.nacti_steno_recniky()
 
         # Merge steno
         suffix = "__steno"
-        self.tbl['steno_recnici'] = pd.merge(left=self.tbl['steno_recnici'], right=steno, on='id_steno', suffixes = ("", suffix), how='left')
+        self.tbl['steno_recnici'] = pd.merge(left=self.tbl['steno_recnici'], right=self.tbl['steno'], on='id_steno', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.tbl['steno_recnici'], suffix, 0.1, "steno_recnici", "steno", inplace=True)
 
-        id_organ_dle_volebniho_obdobi = organy[(organy.nazev_organ_cz == 'Poslanecká sněmovna') & (organy.od_organ.dt.year == self.volebni_obdobi)].iloc[0].id_organ
-        self.tbl['steno_recnici'] = self.tbl['steno_recnici'][self.tbl['steno_recnici'].id_org == id_organ_dle_volebniho_obdobi]
+        if self.volebni_obdobi != -1:
+            self.tbl['steno_recnici'] = self.tbl['steno_recnici'][self.tbl['steno_recnici'].id_organ == self.snemovna.id_organ]
 
         # Merge osoby
         suffix = "__osoby"
-        self.tbl['steno_recnici'] = pd.merge(left=self.tbl['steno_recnici'], right=osoby, on='id_osoba', suffixes = ("", suffix), how='left')
+        self.tbl['steno_recnici'] = pd.merge(left=self.tbl['steno_recnici'], right=self.tbl['osoby'], on='id_osoba', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.tbl['steno_recnici'], suffix, 0.1, 'steno_rec', 'osoby', inplace=True)
 
         # Merge bod schuze

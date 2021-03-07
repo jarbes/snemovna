@@ -3,8 +3,6 @@
 # Agenda eviduje osoby, jejich zařazení do orgánů a jejich funkce v orgánech a orgány jako takové.
 # Informace viz https://www.psp.cz/sqw/hp.sqw?k=1301.
 
-# Poznámka: Většina značení se drží konvencí, které byly zvoleny na uvedené stránce. Výjimkou jsou sloupce 'id_organ' (v tabulkách též jako 'id_org') a id_typ_organ (v tabulkách též jako 'id_typ_org'), pro něž jsme značení sjednotili a používéme vždy první variantu.
-
 from os import path
 
 import pandas as pd
@@ -12,55 +10,65 @@ import numpy as np
 
 from snemovna.utility import *
 from snemovna.Snemovna import *
+from snemovna.TabulkyPoslanciOsoby import *
 from snemovna.setup_logger import log
 
 
-class TypOrganuMixin(object):
-    def nacti_typ_organu(self):
-        path = f"{self.parameters['data_dir']}/typ_organu.unl"
-        header = {
-            'id_typ_organ': MItem('Int64', 'Identifikátor typu orgánu'),
-            'typ_id_typ_organ': MItem('Int64', 'Identifikátor nadřazeného typu orgánu (TypOrgan:id_typ_organ), pokud je null či nevyplněno, pak nemá nadřazený typ'),
-            'nazev_typ_organ_cz': MItem('string', 'Název typu orgánu v češtině'),
-            'nazev_typ_organ_en': MItem('string', 'Název typu orgánu v angličtině'),
-            'typ_organu_obecny': MItem('Int64', 'Obecný typ orgánu, pokud je vyplněný, odpovídá záznamu v TypOrgan:id_typ_organ. Pomocí tohoto sloupce lze najít např. všechny výbory v různých typech zastupitelských sborů.'),
-            'priorita': MItem('Int64', 'Priorita při výpisu')
-        }
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='typ_organu')
-        self.rozsir_meta(header, tabulka='typ_organu', vlastni=False)
-        self.tbl['typ_organu'], self.tbl['_typ_organu'] = df, _df
+class PoslanciOsobyBase(SnemovnaZipDataMixin, SnemovnaDataFrame):
+    """Obecná třída pro dceřiné třídy (Osoby, Organy, Poslanci, etc.)"""
 
-class TypOrganu(TypOrganuMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, stahni=True, *args, **kwargs):
-        super(TypOrganu, self).__init__(*args, **kwargs)
+        log.debug("--> PoslanciOsobyBase")
+
+        super().__init__(*args, **kwargs)
+
         if stahni == True:
-            self.stahni_zip_data('poslanci')
+            self.stahni_zip_data("poslanci")
+
+        log.debug("<-- PoslanciOsobyBase")
+
+class TypOrganu(TabulkaTypOrganuMixin, PoslanciOsobyBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.nacti_typ_organu()
         self.nastav_dataframe(self.tbl['typ_organu'])
 
 
-class OrganyMixin(object):
-    def nacti_organy(self):
-        path = f"{self.parameters['data_dir']}/organy.unl"
-        header = {
-            "id_organ": MItem('Int64', 'Identifikátor orgánu'),
-            "organ_id_organ": MItem('Int64', 'Identifikátor nadřazeného orgánu, viz Organy:id_organ'),
-            "id_typ_organ": MItem('Int64', 'Typ orgánu, viz TypOrgan:id_typ_organ'),
-            "zkratka": MItem('string', 'Zkratka orgánu, bez diakritiky, v některých připadech se zkratka při zobrazení nahrazuje jiným názvem'),
-            "nazev_organ_cz": MItem("string", 'Název orgánu v češtině'),
-            "nazev_organ_en": MItem("string", 'Název orgánu v angličtině'),
-            "od_organ": MItem('string', 'Ustavení orgánu'),
-            "do_organ": MItem('string', 'Ukončení orgánu'),
-            "priorita": MItem('Int64', 'Priorita výpisu orgánů'),
-            "cl_organ_base": MItem('Int64', 'Pokud je nastaveno na 1, pak při výpisu členů se nezobrazují záznamy v tabulkce zarazeni kde cl_funkce == 0. Toto chování odpovídá tomu, že v některých orgánech nejsou členové a teprve z nich se volí funkcionáři, ale přímo se volí do určité funkce.')
-        }
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='organy')
-        self.rozsir_meta(header, tabulka='organy', vlastni=False)
-        df['od_organ'] = format_to_datetime_and_report_skips(df, 'od_organ', '%d.%m.%Y').dt.tz_localize(self.tzn)
-        df['do_organ'] = format_to_datetime_and_report_skips(df, 'do_organ', '%d.%m.%Y').dt.tz_localize(self.tzn)
-        self.tbl['organy'], self.tbl['_organy'] = df, _df
+class Organy(TabulkaOrganyMixin, TypOrganu):
+    def __init__(self, *args, **kwargs):
+        log.debug("--> Organy")
+        super().__init__(*args, **kwargs)
+
+        self.nacti_organy()
+
+        # Připoj Typu orgánu
+        suffix = "__typ_organu"
+        self.tbl['organy'] = pd.merge(left=self.tbl['organy'], right=self.tbl['typ_organu'], on="id_typ_organ", suffixes=("",suffix), how='left')
+        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš k ničemu nejsou.
+        # Tímto se vyhneme varování funkce 'drop_by_inconsistency.
+        self.tbl['organy'].drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
+        self.tbl['organy'] = self.drop_by_inconsistency(self.tbl['organy'], suffix, 0.1, 'organy', 'typ_organu')
+
+        # Nastav volební období, pokud chybí
+        if self.volebni_obdobi == None:
+            self.volebni_obdobi = self._posledni_snemovna().od_organ.year
+            log.debug(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
+
+        if self.volebni_obdobi != -1:
+            x = self.tbl['organy'][
+                (self.tbl['organy'].nazev_organ_cz == 'Poslanecká sněmovna')
+                & (self.tbl['organy'].od_organ.dt.year == self.volebni_obdobi)
+            ]
+            if len(x) == 1:
+                self.snemovna = x.iloc[0]
+            else:
+                log.error('Bylo nalezeno více sněmoven pro dané volební období!')
+                raise ValueError
+
+        self.tbl['organy'] = self.vyber_platne_organy()
+        self.nastav_dataframe(self.tbl['organy'])
+
+        log.debug("<-- Organy")
 
     def vyber_platne_organy(self, df=None):
         if df == None:
@@ -154,82 +162,13 @@ class OrganyMixin(object):
         else:
           return None
 
-class Organy(OrganyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
-        log.debug("--> Organy")
-        super(Organy, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data('poslanci')
-
-        typ_organu = self.pripoj_data(TypOrganu(stahni=False, *args, **kwargs), jmeno='typ_organu')
-
-        self.nacti_organy()
-
-        # Připoj Typu orgánu
-        suffix = "__typ_organu"
-        self.tbl['organy'] = pd.merge(left=self.tbl['organy'], right=self.tbl['typ_organu'], on="id_typ_organ", suffixes=("",suffix), how='left')
-        # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš k ničemu nejsou.
-        # Tímto se vyhneme varování funkce 'drop_by_inconsistency.
-        self.tbl['organy'].drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
-        self.tbl['organy'] = self.drop_by_inconsistency(self.tbl['organy'], suffix, 0.1, 'organy', 'typ_organu')
-
-        # Nastav volební období, pokud chybí
-        if self.volebni_obdobi == None:
-            self.volebni_obdobi = self._posledni_snemovna().od_organ.year
-            log.debug(f"Nastavuji začátek volebního období na: {self.volebni_obdobi}.")
-
-        if self.volebni_obdobi != -1:
-            x = self.tbl['organy'][
-                (self.tbl['organy'].nazev_organ_cz == 'Poslanecká sněmovna')
-                & (self.tbl['organy'].od_organ.dt.year == self.volebni_obdobi)
-            ]
-            if len(x) == 1:
-                self.snemovna = x.iloc[0]
-            else:
-                log.error('Bylo nalezeno více sněmoven pro dané volební období!')
-                raise ValueError
-
-        self.tbl['organy'] = self.vyber_platne_organy()
-        self.nastav_dataframe(self.tbl['organy'])
-
-        log.debug("<-- Organy")
-
-class TypFunkceMixin(object):
-    def nacti_typ_funkce(self):
-        path = f"{self.parameters['data_dir']}/typ_funkce.unl"
-        header = {
-            'id_typ_funkce': MItem('Int64', 'Identifikator typu funkce'),
-            'id_typ_organ': MItem('Int64', 'Identifikátor typu orgánu, viz TypOrgan:id_typ_organ'),
-            'typ_funkce_cz': MItem('string', 'Název typu funkce v češtině'),
-            'typ_funkce_en': MItem('string', 'Název typu funkce v angličtině'),
-            'priorita': MItem('Int64', 'Priorita při výpisu'),
-            'typ_funkce_obecny__ORIG': MItem('Int64', 'Obecný typ funkce, 1 - předseda, 2 - místopředseda, 3 - ověřovatel, jiné hodnoty se nepoužívají.')
-
-        }
-
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='typ_funkce')
-        self.rozsir_meta(header, tabulka='typ_funkce', vlastni=False)
-
-        mask = {1: "předseda", 2: "místopředseda", 3: "ověřovatel"}
-        df['typ_funkce_obecny'] = mask_by_values(df.typ_funkce_obecny__ORIG, mask).astype('string')
-        self.meta['typ_funkce_obecny'] = dict(popis='Obecný typ funkce.', tabulka='typ_funkce', vlastni=True)
-
-        self.tbl['typ_funkce'], self.tbl['_typ_funkce'] = df, _df
-
 
 # Tabulka definuje typ funkce v orgánu - pro každý typ orgánu jsou definovány typy funkcí. Texty názvů typu funkce se používají při výpisu namísto textů v Funkce:nazev_funkce_LL .
 # Třída TypFunkce nebere v úvahu závislost na volebnim obdobi, protože tu je možné získat až pomocí dceřinných tříd (ZarazeniOsoby).
-class TypFunkce(TypFunkceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
+class TypFunkce(TabulkaTypFunkceMixin, TypOrganu):
+    def __init__(self, *args, **kwargs):
         log.debug("--> TypFunkce")
-        super(TypFunkce, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data('poslanci')
-
-        typ_organu = self.pripoj_data(TypOrganu(stahni=False, *args, **kwargs), jmeno='typ_organu')
+        super().__init__(*args, **kwargs)
 
         self.nacti_typ_funkce()
 
@@ -251,39 +190,12 @@ class TypFunkce(TypFunkceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         log.debug("<-- TypFunkce")
 
-class FunkceMixin(object):
-    def nacti_funkce(self):
-        path = f"{self.parameters['data_dir']}/funkce.unl"
-        header = {
-            "id_funkce": MItem('Int64', 'Identifikátor funkce, používá se v ZarazeniOsoby:id_fo'),
-            "id_organ": MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organ'),
-            "id_typ_funkce": MItem('Int64', 'Typ funkce, viz typ_funkce:id_typ_funkce'),
-            "nazev_funkce_cz": MItem('string', 'Název funkce, pouze pro interní použití'),
-            "priorita": MItem('Int64', 'Priorita výpisu')
-        }
 
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='funkce')
-        self.rozsir_meta(header, tabulka='funkce', vlastni=False)
-
-        self.tbl['funkce'], self.tbl['_funkce'] = df, _df
-
-    def vyber_platne_funkce(self):
-        if self.volebni_obdobi != -1:
-            self.tbl['funkce'] = self.tbl['funkce'][self.tbl['funkce'].id_organ.isin(self.tbl['organy'].id_organ)]
-
-
-class Funkce(FunkceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-
-    def __init__(self, stahni=True, *args, **kwargs):
+class Funkce(TabulkaFunkceMixin, Organy, TypFunkce):
+    def __init__(self, *args, **kwargs):
         log.debug("--> Funkce")
-        super(Funkce, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-        if stahni == True:
-            self.stahni_zip_data('poslanci')
-
-        organy = self.pripoj_data(Organy(stahni=False, *args, **kwargs), jmeno='organy')
-        typ_funkce = self.pripoj_data(TypFunkce(stahni=False, *args, **kwargs), jmeno='typ_funkce')
         self.nacti_funkce()
 
         # Zúžení
@@ -321,67 +233,15 @@ class Funkce(FunkceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         log.debug("<-- Funkce")
 
-class OsobyMixin(object):
-    def nacti_osoby(self):
-        # Obsahuje jména osob, které jsou zařazeni v orgánech.
-        # Vzhledem k tomu, že k jednoznačnému rozlišení osob často není dostatek informací, je možné, že ne všechny záznamy odkazují na jedinečné osoby, tj. některé osoby jsou v tabulce vícekrát.
-        path = f"{self.parameters['data_dir']}/osoby.unl"
-        header = {
-            "id_osoba": MItem("Int64", 'Identifikátor osoby'),
-            "pred": MItem('string', 'Titul pred jmenem'),
-            "prijmeni": MItem('string', 'Příjmení, v některých případech obsahuje i dodatek typu "st.", "ml."'),
-            "jmeno": MItem('string', 'Jméno'),
-            "za": MItem('string', 'Titul za jménem'),
-            "narozeni": MItem('string', 'Datum narození, pokud neznámo, pak 1.1.1900.'),
-            'pohlavi__ORIG': MItem('string', 'Pohlaví, "M" jako muž, ostatní hodnoty žena'),
-            "zmena": MItem('string', 'Datum posledni změny'),
-            "umrti": MItem('string', 'Datum úmrtí')
-        }
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'osoby')
-        self.rozsir_meta(header, tabulka='osoby', vlastni=False)
+    def vyber_platne_funkce(self):
+        if self.volebni_obdobi != -1:
+            self.tbl['funkce'] = self.tbl['funkce'][self.tbl['funkce'].id_organ.isin(self.tbl['organy'].id_organ)]
 
-        df["pohlavi"] = mask_by_values(df.pohlavi__ORIG, {'M': "muž", 'Z': 'žena', 'Ž': 'žena'}).astype('string')
-        self.meta['pohlavi'] = dict(popis='Pohlaví.', tabulka='osoby', vlastni=True)
 
-        # Parsuj narození, meta informace není třeba přidávat, jsou v hlavičce
-        #df['narozeni'] = pd.to_datetime(df['narozeni'], format="%d.%m.%Y", errors='coerce').dt.tz_localize(self.tzn)
-        df['narozeni'] = format_to_datetime_and_report_skips(df, 'narozeni', to_format="%d.%m.%Y").dt.tz_localize(self.tzn)
-        df['narozeni'] = df.narozeni.mask(df.narozeni.dt.strftime("%d.%m.%Y") == '01.01.1900', pd.NaT)
-
-        # Parsuj úmrtí, meta informace není třeba přidávat, jsou v hlavičce
-        df['umrti'] = format_to_datetime_and_report_skips(df, 'umrti', to_format="%d.%m.%Y").dt.tz_localize(self.tzn)
-        df['umrti'] = df.umrti.mask(df.umrti.dt.strftime("%d.%m.%Y") == '01.01.1900', pd.NaT)
-        # Parsuj datum poslední změny záznamu, meta informace není třeba přidávat, jsou v hlavičce
-        df['zmena'] = format_to_datetime_and_report_skips(df, 'zmena', to_format="%d.%m.%Y").dt.tz_localize(self.tzn)
-
-        self.tbl['osoby'], self.tbl['_osoby'] = df, _df
-
-class OsobaExtraMixin(object):
-    def nacti_osoba_extra(self):
-    # Tabulka obsahuje vazby na externí systémy. Je-li typ = 1, pak jde o vazbu na evidenci senátorů na senat.cz
-        path = f"{self.parameters['data_dir']}/osoba_extra.unl"
-        header = {
-            'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoba:id_osoba'),
-            'id_organ': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organ'),
-            'typ': MItem('Int64', 'Typ záznamu, viz výše. [??? Asi chtěli napsat níže ...]'),
-            'obvod': MItem('Int64', 'Je-li typ = 1, pak jde o číslo senátního obvodu.'),
-            'strana': MItem('string', 'Je-li typ = 1, pak jde o název volební strany/hnutí či označení nezávislého kandidáta'),
-            'id_external': MItem('Int64', 'Je-li typ = 1, pak je to identifikátor senátora na senat.cz')
-        }
-
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'osoba_extra')
-        self.rozsir_meta(header, tabulka='osoba_extra', vlastni=False)
-        self.tbl['osoba_extra'], self.tbl['_osoba_extra'] = df, _df
-
-class Osoby(OsobaExtraMixin, OsobyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
+class Osoby(TabulkaOsobaExtraMixin, TabulkaOsobyMixin, PoslanciOsobyBase):
+    def __init__(self, *args, **kwargs):
         log.debug("--> Osoby")
         super(Osoby, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data('poslanci')
 
         self.nacti_osoby()
         self.nacti_osoba_extra()
@@ -395,47 +255,11 @@ class Osoby(OsobaExtraMixin, OsobyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame
         log.debug("<-- Osoby")
 
 
-class ZarazeniOsobyMixin(object):
-    def nacti_zarazeni_osoby(self):
-        path = f"{self.parameters['data_dir']}/zarazeni.unl"
-        header = {
-            'id_osoba': MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba'),
-            'id_of': MItem('Int64', 'Identifikátor orgánu či funkce: pokud je zároveň nastaveno zarazeni:cl_funkce == 0, pak id_o odpovídá Organy:id_organ, pokud cl_funkce == 1, pak odpovídá Funkce:id_funkce.'),
-            'cl_funkce__ORIG': MItem('Int64', 'Status členství nebo funce: pokud je rovno 0, pak jde o členství, pokud 1, pak jde o funkci.'),
-            'od_o': MItem('string', 'Zařazení od. [year to hour]'),
-            'do_o':  MItem('string', 'Zařazení do. [year to hour]'),
-            'od_f': MItem('string', 'Mandát od. Nemusí být vyplněno a pokud je vyplněno, pak určuje datum vzniku mandátu a ZarazeniOsoby:od_o obsahuje datum volby. [date]'),
-            'do_f': MItem('string', 'Mandát do. Nemusí být vyplněno a pokud je vyplněno, určuje datum konce mandátu a ZarazeniOsoby:do_o obsahuje datum ukončení zařazení. [date]')
-        }
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'zarazeni_osoby')
-        self.rozsir_meta(header, tabulka='zarazeni_osoby', vlastni=False)
-
-        df['od_o'] = format_to_datetime_and_report_skips(df, 'od_o', '%Y-%m-%d %H').dt.tz_localize(self.tzn)
-        # Fix known errors
-        #df['do_o'] = df.do_o.mask(df.do_o == '0205-06-09 00',  '2005-06-09 00')
-        df['do_o'] = format_to_datetime_and_report_skips(df, 'do_o', '%Y-%m-%d %H').dt.tz_localize(self.tzn)
-        df['od_f'] = format_to_datetime_and_report_skips(df, 'od_f', '%d.%m.%Y').dt.tz_localize(self.tzn)
-        df['do_f'] = format_to_datetime_and_report_skips(df, 'do_f', '%d.%m.%Y').dt.tz_localize(self.tzn)
-
-        mask = {0: 'členství', 1: 'funkce'}
-        df['cl_funkce'] = mask_by_values(df.cl_funkce__ORIG, mask).astype('string')
-        self.meta['cl_funkce'] = dict(popis='Status členství nebo funkce.', tabulka='zarazeni_osoby', vlastni=True)
-        self.tbl['zarazeni_osoby'], self.tbl['_zarazeni_osoby'] = df, _df
-
-class ZarazeniOsoby(ZarazeniOsobyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
+class ZarazeniOsoby(TabulkaZarazeniOsobyMixin, Funkce, Organy, Osoby):
+    def __init__(self, *args, **kwargs):
         log.debug("--> ZarazeniOsoby")
 
-        super(ZarazeniOsoby, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data('poslanci')
-
-        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
-        organy = self.pripoj_data(Organy(stahni=False, *args, **kwargs), jmeno='organy')
-        self.snemovna = organy.snemovna
-        funkce = self.pripoj_data(Funkce(stahni=False, *args, **kwargs), jmeno='funkce')
+        super().__init__(*args, **kwargs)
 
         self.nacti_zarazeni_osoby()
 
@@ -492,61 +316,12 @@ class ZarazeniOsoby(ZarazeniOsobyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame)
 
             self.tbl['zarazeni_osoby'] = self.tbl['zarazeni_osoby'][podminka_interval]
 
-class PoslanciMixin(object):
-        # Další informace o poslanci vzhledem k volebnímu období: kontaktní údaje, adresa regionální kanceláře a podobně.
-        # Některé údaje jsou pouze v aktuálním volebním období.
-    def nacti_poslance(self):
-        path = f"{self.parameters['data_dir']}/poslanec.unl"
-        header = {
-            "id_poslanec": MItem('Int64', 'Identifikátor poslance'),
-            "id_osoba": MItem('Int64', 'Identifikátor osoby, viz Osoby:id_osoba'),
-            "id_kraj": MItem('Int64', 'Volební kraj, viz Organy:id_organ'),
-            "id_kandidatka": MItem('Int64', 'Volební strana/hnutí, viz Organy:id_organ, pouze odkazuje na stranu/hnutí, za kterou byl zvolen a nemusí mít souvislost s členstvím v poslaneckém klubu.'),
-            "id_organ":  MItem('Int64', 'Volební období, viz Organy:id_organ'),
-            "web": MItem('string', 'URL vlastních stránek poslance'),
-            "ulice": MItem('string', 'Adresa regionální kanceláře, ulice.'),
-            "obec": MItem('string', 'Adresa regionální kanceláře, obec.'),
-            "psc": MItem('string', 'Adresa regionální kanceláře, PSČ.'),
-            "email": MItem('string', 'E-mailová adresa poslance, případně obecná posta@psp.cz.'),
-            "telefon": MItem('string', 'Adresa regionální kanceláře, telefon.'),
-            "fax": MItem('string', 'Adresa regionální kanceláře, fax.'),
-            "psp_telefon": MItem('string', 'Telefonní číslo do kanceláře v budovách PS.'),
-            "facebook": MItem('string', 'URL stránky služby Facebook.'),
-            "foto": MItem('Int64', 'Pokud je rovno 1, pak existuje fotografie poslance.')
-        }
 
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'poslanci')
-        self.rozsir_meta(header, tabulka='poslanci', vlastni=False)
-        self.tbl['poslanci'], self.tbl['_poslanci'] = df, _df
-
-class PoslanciPkgpsMixin(object):
-    def nacti_poslanci_pkgps(self):
-        # Obsahuje GPS souřadnice regionálních kanceláří poslanců.
-        path = f"{self.parameters['data_dir']}/pkgps.unl"
-        header = {
-            'id_poslanec': MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
-            'adresa': MItem('string', 'Adresa kanceláře, jednotlivé položky jsou odděleny středníkem'),
-            'sirka': MItem('string', 'Severní šířka, WGS 84, formát GG.AABBCCC, GG = stupně, AA - minuty, BB - vteřiny, CCC - tisíciny vteřin'),
-            'delka': MItem('string', 'Východní délka, WGS 84, formát GG.AABBCCC, GG = stupně, AA - minuty, BB - vteřiny, CCC - tisíciny vteřin')
-        }
-        _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'poslanci_pkgps')
-        self.rozsir_meta(header, tabulka='poslanci_pkgps', vlastni=False)
-        self.tbl['poslanci_pkgps'], self.tbl['_poslanci_pkgps'] = df, _df
-
-class Poslanci(PoslanciMixin, PoslanciPkgpsMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-    def __init__(self, stahni=True, *args, **kwargs):
+class Poslanci(TabulkaPoslanciPkgpsMixin, TabulkaPoslanciMixin, ZarazeniOsoby, Organy):
+    def __init__(self, *args, **kwargs):
         log.debug("--> Poslanci")
 
-        super(Poslanci, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data('poslanci')
-
-        zarazeni_osoby = self.pripoj_data(ZarazeniOsoby(stahni=False, *args, **kwargs), jmeno='zarazeni_osoby')
-        organy = self.pripoj_data(Organy(stahni=False, *args, **kwargs), jmeno='organy')
-        self.snemovna = organy.snemovna
+        super().__init__(*args, **kwargs)
 
         self.nacti_poslanci_pkgps()
         self.nacti_poslance()

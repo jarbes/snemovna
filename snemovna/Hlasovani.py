@@ -10,6 +10,7 @@ from snemovna.utility import *
 
 from snemovna.Snemovna import *
 from snemovna.PoslanciOsoby import Osoby, Organy, Poslanci
+from snemovna.TabulkyHlasovani import *
 
 from snemovna.setup_logger import log
 
@@ -21,139 +22,29 @@ from snemovna.setup_logger import log
 # Pokud skončí v průběhu volebního období poslanci mandát, ihned vzniká mandát jeho náhradníkovi, který se ujímá mandátu po složení slibu na první schůzi, které se zúčastní. Mezitím je ve výsledcích hlasování veden jako nepřihlášen (výsledek 'W').
 # Upozornění: data omluv se mohou doplňovat se zpožděním a tedy počty omluvených se mohou lišit. Na výsledek hlasování to nemá žádný vliv, během hlasování není seznam omluvených k dispozici a omluvení poslanci jsou vedeni jako nepřihlášen.
 
-class TabulkaHlasovaniMixin(object):
-    def nacti_hlasovani(self):
-        # Souhrnné informace o hlasování
-        path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}s.unl"
-        header = {
-            'id_hlasovani': MItem('Int64', 'Identifikátor hlasování'),
-            'id_organ': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organ'),
-            'schuze': MItem('Int64', 'Číslo schůze'),
-            'cislo': MItem('Int64', 'Číslo hlasování'),
-            'bod': MItem('Int64', 'Bod pořadu schůze; je-li menší než 1, pak jde o procedurální hlasování nebo o hlasování k bodům, které v době hlasování neměly přiděleno číslo.'),
-            'datum__ORIG': MItem('string', 'Datum hlasování [den]'),
-            'cas': MItem('string', 'Čas hlasování'),
-            "pro": MItem('Int64', 'Počet hlasujících pro'),
-            "proti": MItem('Int64', 'Počet hlasujících proti'),
-            "zdrzel": MItem('Int64', 'Počet hlasujících zdržel se, tj. stiskl tlačítko X'),
-            "nehlasoval": MItem('Int64', 'Počet přihlášených, kteří nestiskli žádné tlačítko'),
-            "prihlaseno": MItem('Int64', 'Počet přihlášených poslanců'),
-            "kvorum": MItem('Int64', 'Kvórum, nejmenší počet hlasů k přijetí návrhu'),
-            "druh_hlasovani__ORIG": MItem('string', 'Druh hlasování: N - normální, R - ruční (nejsou známy hlasování jednotlivých poslanců)'),
-            "vysledek__ORIG": MItem('string', 'Výsledek: A - přijato, R - zamítnuto, jinak zmatečné hlasování'),
-            "nazev_dlouhy": MItem('string', 'Dlouhý název bodu hlasování'),
-            "nazev_kratky": MItem('string', 'Krátký název bodu hlasování')
-        }
 
-        # Doporučené kódování 'cp1250' nefunguje, detekované 'ISO-8859-1' také nefunguje, 'ISO-8859-2' funguje.
-        _df = pd.read_csv(path, sep="|", names = header.keys(),  index_col=False, encoding='ISO-8859-2')
-        df = pretypuj(_df, header, name='hlasovani')
-        self.rozsir_meta(header, tabulka='hlasovani', vlastni=False)
+class HlasovaniBase(Organy):
 
-        # Odstraň whitespace z řetězců
-        df = strip_all_string_columns(df)
-
-        # Přidej 'datum'
-        df['datum'] = pd.to_datetime(df['datum__ORIG'] + ' ' + df['cas'], format='%d.%m.%Y %H:%M')
-        df['datum'] = df['datum'].dt.tz_localize(self.tzn)
-        self.meta['datum'] =  dict(popis='Datum hlasování', tabulka='hlasovani', vlastni=True)
-
-        # Přepiš 'cas'
-        df['cas'] = df['datum'].dt.time
-        self.meta['cas'] = dict(popis='Čas hlasování', tabulka='hlasovani', vlastni=False)
-
-        # Interpretuj 'bod pořadu'
-        df["bod__KAT"] = df.bod.astype('string').mask(df.bod < 1, 'procedurální nebo bez přiděleného čísla').mask(df.bod >= 1, "normální")
-        self.meta['bod__KAT'] = dict(popis='Katogorie bodu hlasování', tabulka='hlasovani', vlastni=True)
-
-        # Interpretuj 'výsledek'
-        mask = {'A': "přijato", 'R': 'zamítnuto'}
-        df["vysledek"] = mask_by_values(df.vysledek__ORIG, mask).astype('string')
-        self.meta['vysledek'] = dict(popis='Výsledek hlasování', tabulka='hlasovani', vlastni=True)
-
-        # Interpretuj 'druh hlasování'
-        mask = {'N': 'normální', 'R': 'ruční'}
-        df["druh_hlasovani"] = mask_by_values(df.druh_hlasovani__ORIG, mask).astype('string')
-        self.meta['druh_hlasovani'] =  dict(popis='Druh hlasování', tabulka='hlasovani', vlastni=True)
-
-        self.tbl['hlasovani'], self.tbl['_hlasovani'] = df, _df
-
-class TabulkaZmatecneHlasovaniMixin(object):
-    def nacti_zmatecne_hlasovani(self):
-        # Hlasování, která byla prohlášena za zmatečné, tj. na jejich výsledek nebyl brán zřetel
-        path = f"{self.parameters['data_dir']}/zmatecne.unl"
-        header = {
-            "id_hlasovani": MItem("Int64", 'Identifikátor hlasování.')
-        }
-
-        _df = pd.read_csv(path, sep="|", names = header.keys(),  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='zmatecne')
-        self.rozsir_meta(header, tabulka='zmatecne', vlastni=False)
-        self.tbl['zmatecne'], self.tbl['_zmatecne'] = df, _df
-
-class TabulkaZpochybneniHlasovaniMixin(object):
-    # Načti tabulku zpochybneni hlasovani (hl_check)
-    def nacti_zpochybneni(self):
-        path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}z.unl"
-        header = {
-            "id_hlasovani": MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani.'),
-            "turn": MItem('Int64', 'Číslo stenozáznamu, ve kterém je první zmínka o zpochybnění hlasování.'),
-            "mode": MItem('Int64', 'Typ zpochybnění: 0 - žádost o opakování hlasování - v tomto případě se o této žádosti neprodleně hlasuje a teprve je-li tato žádost přijata, je hlasování opakováno; 1 - pouze sdělení pro stenozáznam, není požadováno opakování hlasování.'),
-            "id_h2": MItem('Int64', 'Identifikátor hlasování o žádosti o opakování hlasování, viz hl_hlasovani:id_hlasovani. Zaznamenává se poslední takové, které nebylo zpochybněno.'),
-            "id_h3": MItem('Int64', 'Identifikátor opakovaného hlasování, viz hl_hlasovani:id_hlasovani a hl_check:id_hlasovani. Zaznamenává se poslední takové, které nebylo zpochybněno.')
-        }
-
-        _df = pd.read_csv(path, sep="|", names = header.keys(),  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='zpochybneni')
-        self.rozsir_meta(header, tabulka='zpochybneni', vlastni=False)
-
-        # 0 - žádost o opakování hlasování - v tomto případě se o této žádosti neprodleně hlasuje a teprve je-li tato žádost přijata, je hlasování opakováno;
-        # 1 - pouze sdělení pro stenozáznam, není požadováno opakování hlasování.
-        maska = {0: "žádost o opakování hlasování", 1: "pouze sdělení pro stenozáznam"}
-        df["mode__KAT"] = mask_by_values(df["mode"], maska).astype('string')
-        self.meta['mode__KAT'] = dict(popis='Typ zpochybnění', tabulka='zpochybneni', vlastni=True)
-        self.tbl['zpochybneni'], self.tbl['_zpochybneni'] = df, _df
-
-class TabulkaHlasovaniVazbaStenozaznamMixin(object):
-    def nacti_hlasovani_vazba_stenozaznam(self):
-        ''' Načte tabulku vazeb hlasovani na stenozaznam.'''
-        path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}v.unl"
-        header = {
-            "id_hlasovani": MItem('Int64', 'Identifikátor hlasování, viz hl_hlasovani:id_hlasovani'),
-            "turn": MItem('Int64', 'Číslo stenozáznamu'),
-            "typ__ORIG": MItem('Int64', 'Typ vazby: 0 - hlasování je v textu explicitně zmíněno a lze tedy vytvořit odkaz přímo na začátek hlasování, 1 - hlasování není v textu explicitně zmíněno, odkaz lze vytvořit pouze na stenozáznam jako celek.')
-        }
-        _df = pd.read_csv(path, sep="|", names = header.keys(),  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='vazba_stenozaznam')
-
-        self.rozsir_meta(header, tabulka='vazba_stenozaznam', vlastni=False)
-
-        # Interpretuj 'typ'
-        df["typ"] = mask_by_values(df.typ__ORIG, {0: "hlasovani zmíněno v stenozáznamu", 1: "hlasování není zmíněno v stenozáznamu"}).astype('string')
-        self.meta['typ'] = dict(popis='Typ vazby na stenozáznam.', tabulka='vazba_stenozaznam', vlastni=True)
-        # Vazba na stenozaznam nemusí být aktuální. Například pro sněmovnu 2017 je tabulka nevyplněná.
-        self.tbl['hlasovani_vazba_stenozaznam'], self.tbl['_hlasovani_vazba_stenozaznam'] = df, _df
-
-class Hlasovani(TabulkaHlasovaniMixin, TabulkaZmatecneHlasovaniMixin, TabulkaZpochybneniHlasovaniMixin, TabulkaHlasovaniVazbaStenozaznamMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
     def __init__(self, stahni=True, *args, **kwargs):
-        log.debug("--> Hlasovani")
+        log.debug("--> HlasovaniBase")
 
-        if 'volebni_obdobi' not in kwargs:
-            organy = Organy(stahni, *args, **kwargs)
-            volebni_obdobi = organy.volebni_obdobi
-            kwargs['volebni_obdobi'] = volebni_obdobi
-        else:
-            volebni_obdobi = kwargs['volebni_obdobi']
-
-        super(Hlasovani, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         if stahni == True:
-            self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-        kwargs['stahni'] =  False
+            self.stahni_zip_data(f"hl-{self.volebni_obdobi}ps")
+
+        log.debug("<-- HlasovaniBase")
+
+
+class Hlasovani(TabulkaHlasovaniMixin, TabulkaZmatecneHlasovaniMixin, TabulkaZpochybneniHlasovaniMixin, TabulkaHlasovaniVazbaStenozaznamMixin, HlasovaniBase):
+    def __init__(self, *args, **kwargs):
+        log.debug("--> Hlasovani")
+
+        super().__init__(*args, **kwargs)
 
         self.nacti_hlasovani()
         self.nacti_zmatecne_hlasovani()
-        self.nacti_zpochybneni()
+        self.nacti_zpochybneni_hlasovani()
         self.nacti_hlasovani_vazba_stenozaznam()
 
         # Zúžení dat na zvolené volební období. Tohle je asi nejjednodušší způsob.
@@ -198,12 +89,12 @@ class Hlasovani(TabulkaHlasovaniMixin, TabulkaZmatecneHlasovaniMixin, TabulkaZpo
         log.debug("<-- Hlasovani")
 
 
-class ZmatecneHlasovani(SnemovnaDataFrame):
+class ZmatecneHlasovani(Hlasovani):
     def __init__(self, *args, **kwargs):
         log.debug("--> ZmatecneHlasovani")
 
-        super(ZmatecneHlasovani, self).__init__(*args, **kwargs)
-        hlasovani = self.pripoj_data(Hlasovani(*args, **kwargs), jmeno='hlasovani')
+        super().__init__(*args, **kwargs)
+        self.nacti_zmatecne_hlasovani()
 
         suffix = "__hlasovani"
         self.tbl['zmatecne'] = pd.merge(left=self.tbl['zmatecne'], right=self.tbl['hlasovani'], on='id_hlasovani', suffixes = ("", suffix), how='left')
@@ -214,13 +105,14 @@ class ZmatecneHlasovani(SnemovnaDataFrame):
         log.debug("<-- ZmatecneHlasovani")
 
 
-class ZpochybneniHlasovani(SnemovnaDataFrame):
+class ZpochybneniHlasovani(Hlasovani):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> ZpochybneniHlasovani")
 
-        super(ZpochybneniHlasovani, self).__init__(*args, **kwargs)
-        hlasovani = self.pripoj_data(Hlasovani(*args, **kwargs), jmeno='hlasovani')
+        super().__init__(*args, **kwargs)
+
+        self.nacti_zpochybneni_hlasovani()
 
         suffix = "__hlasovani"
         self.tbl['zpochybneni'] = pd.merge(left=self.tbl['zpochybneni'], right=self.tbl['hlasovani'], on='id_hlasovani', suffixes = ("", suffix), how='left')
@@ -230,38 +122,13 @@ class ZpochybneniHlasovani(SnemovnaDataFrame):
 
         log.debug("<-- ZpochybneniHlasovani")
 
-class TabulkaZpochybneniPoslancemMixin(object):
-    def nacti_zpochybneni_poslancem(self):
-        # Poslanci, kteří oznámili zpochybnění hlasování
-        path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}x.unl"
-        header = {
-            "id_hlasovani": MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani a ZpochybneniPoslancem:id_hlasovani, které bylo zpochybněno.'),
-            "id_osoba": MItem('Int64', 'Identifikátor poslance, který zpochybnil hlasování; viz Osoby:id_osoba.'),
-            "mode": MItem('Int64', 'Typ zpochybnění, viz ZpochybneniHlasovani:mode.')
-        }
 
-        _df = pd.read_csv(path, sep="|", names = header.keys(),  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header)
-        self.rozsir_meta(header, tabulka='zpochybneni_poslancem', vlastni=False)
-        self.tbl['zpochybneni_poslancem'], self.tbl['_zpochybneni_poslancem'] = df, _df
+class ZpochybneniPoslancem(TabulkaZpochybneniPoslancemMixin, Hlasovani, Organy, Osoby):
 
-class ZpochybneniPoslancem(TabulkaZpochybneniPoslancemMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-
-    def __init__(self, stahni=True, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         log.debug("--> ZpochybneniPoslancem")
 
-        org = Organy(stahni, *args, **kwargs)
-        volebni_obdobi = org.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
-        super(ZpochybneniPoslancem, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-
-        organy = self.pripoj_data(org, jmeno='organy')
-        osoby = self.pripoj_data(Osoby(stahni=False, *args, **kwargs), jmeno='osoby')
-        hlasovani = self.pripoj_data(Hlasovani(stahni=False, *args, **kwargs), jmeno='hlasovani')
+        super().__init__(*args, **kwargs)
 
         self.nacti_zpochybneni_poslancem()
 
@@ -283,57 +150,13 @@ class ZpochybneniPoslancem(TabulkaZpochybneniPoslancemMixin, SnemovnaZipDataMixi
         log.debug("<-- ZpochybneniPoslancem")
 
 
-class TabulkaOmluvyMixin(object):
-    def nacti_omluvy(self):
-        # Tabulka zaznamenává časové ohraničení omluv poslanců z jednání Poslanecké sněmovny.
-        # Omluvy poslanců sděluje předsedající na začátku nebo v průběhu jednacího dne.
-        # Data z tabulky se použijí pouze k nahrazení výsledku typu '@', tj. pokud výsledek hlasování jednotlivého poslance je nepřihlášen, pak pokud zároveň čas hlasování spadá do časového intervalu omluvy, pak se za výsledek považuje 'M', tj. omluven.
-        #Pokud je poslanec omluven a zároveň je přihlášen, pak výsledek jeho hlasování má přednost před omluvou.
-        path = f"{self.parameters['data_dir']}/omluvy.unl"
-        header = {
-            "id_organ": MItem('Int64', 'Identifikátor volebního období, viz Organy:id_organ'),
-            "id_poslanec": MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
-            "den__ORIG": MItem('string', 'Datum omluvy'),
-            "od__ORIG": MItem('string', 'Čas začátku omluvy, pokud je null, pak i omluvy:do je null a jedná se o omluvu na celý jednací den.'),
-            "do__ORIG": MItem('string', 'Čas konce omluvy, pokud je null, pak i omluvy:od je null a jedná se o omluvu na celý jednací den.')
-        }
 
-        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, 'omluvy')
-        self.rozsir_meta(header, tabulka='omluvy', vlastni=False)
+class Omluvy(TabulkaOmluvyMixin, HlasovaniBase, Poslanci, Organy):
 
-        df['od'] = format_to_datetime_and_report_skips(df, 'od__ORIG', to_format='%H:%M').dt.tz_localize(self.tzn).dt.time
-        self.meta['od'] = dict(popis='Čas začátku omluvy.', tabulka='omluvy', vlastni=True)
-        df['do'] = format_to_datetime_and_report_skips(df, 'do__ORIG', to_format='%H:%M').dt.tz_localize(self.tzn).dt.time
-        self.meta['do'] = dict(popis='Čas konce omluvy.', tabulka='omluvy', vlastni=True)
-        df['den'] = format_to_datetime_and_report_skips(df, 'den__ORIG', to_format='%d.%m.%Y').dt.tz_localize(self.tzn)
-        self.meta['den'] = dict(popis='Datum omluvy [den].', tabulka='omluvy', vlastni=True)
-
-        # TODO: Přidej sloupec typu 'datum_od', 'datum_do'
-        # O začátcích a koncích omluv je možné něco zjistit z tabulky Stentexty, ale nebude to moc spolehlivé.
-        #df['datum_od'] = pd.to_datetime(df['den'] + ' ' + df['od'], format='%d.%m.%Y %H:%M')
-        #df['datum_do'] = pd.to_datetime(df['den'] + ' ' + df['od'], format='%d.%m.%Y %H:%M')
-
-        self.tbl['omluvy'], self.tbl['_omluvy'] = df, _df
-
-
-class Omluvy(TabulkaOmluvyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-
-    def __init__(self, stahni=True, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         log.debug("--> Omluvy")
 
-        org = Organy(stahni, *args, **kwargs)
-        volebni_obdobi = org.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
-        super(Omluvy, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-
-        organy = self.pripoj_data(org, jmeno='organy')
-        self.snemovna = organy.snemovna
-        poslanci = self.pripoj_data(Poslanci(stahni=False, *args, **kwargs), jmeno='poslanci')
+        super().__init__(*args, **kwargs)
 
         self.nacti_omluvy()
 
@@ -354,47 +177,13 @@ class Omluvy(TabulkaOmluvyMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         log.debug("<-- Omluvy")
 
-class TabulkaHlasovaniPoslanceMixin(object):
-    def nacti_hlasovani_poslance(self):
-        # V souborech uložena jako hlXXXXhN.unl, kde XXXX je reference volebního období a N je číslo části. V 6. a 7. volebním období obsahuje část č. 1 hlasování 1. až 50. schůze, část č. 2 hlasování od 51. schůze.
-        paths = glob(f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}h*.unl")
-        header = {
-            'id_poslanec': MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
-            'id_hlasovani': MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani'),
-            'vysledek__ORIG': MItem('string',"Hlasování jednotlivého poslance. 'A' - ano, 'B' nebo 'N' - ne, 'C' - zdržel se (stiskl tlačítko X), 'F' - nehlasoval (byl přihlášen, ale nestiskl žádné tlačítko), '@' - nepřihlášen, 'M' - omluven, 'W' - hlasování před složením slibu poslance, 'K' - zdržel se/nehlasoval. Viz úvodní vysvětlení zpracování výsledků hlasování.")
-        }
 
-        # Hlasovani poslance může být ve více souborech
-        frames = []
-        for f in paths:
-          frames.append(pd.read_csv(f, sep="|", names = header,  index_col=False, encoding='cp1250'))
+class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, HlasovaniBase, Poslanci):
 
-        _df = pd.concat(frames, ignore_index=True)
-        df = pretypuj(_df, header, name='hlasovani_poslance')
-        self.rozsir_meta(header, tabulka='hlasovani_poslance', vlastni=False)
-
-        mask = {'A': 'ano', 'B': 'ne', 'N': 'ne', 'C': 'zdržení se', 'F': 'nehlasování', '@': 'nepřihlášení', 'M': 'omluva', 'W': 'hlasování bez slibu', 'K': 'zdržení/nehlasování'}
-        df['vysledek'] = mask_by_values(df.vysledek__ORIG, mask)
-        self.meta['vysledek'] = dict(popis='Hlasování jednotlivého poslance.', tabulka='hlasovani_poslance', vlastni=True)
-
-        self.tbl['hlasovani_poslance'], self.tbl['_hlasovani_poslance'] = df, _df
-
-class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, SnemovnaZipDataMixin, SnemovnaDataFrame):
-
-    def __init__(self, stahni=True, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         log.debug("--> HlasovaniPoslance")
 
-        org = Organy(stahni, *args, **kwargs)
-        volebni_obdobi = org.volebni_obdobi
-        kwargs['volebni_obdobi'] = volebni_obdobi
-
-        super(HlasovaniPoslance, self).__init__(*args, **kwargs)
-
-        if stahni == True:
-            self.stahni_zip_data(f"hl-{volebni_obdobi}ps")
-
-        poslanci = self.pripoj_data(Poslanci(stahni=False, *args, **kwargs), jmeno='poslanci')
-        self.snemovna = poslanci.snemovna
+        super().__init__(*args, **kwargs)
 
         self.nacti_hlasovani_poslance()
 
