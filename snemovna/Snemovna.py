@@ -29,7 +29,7 @@ class SnemovnaMeta(MyDataFrame):
         # Set index
         self.set_index(index_name, inplace=True)
 
-    def __setitem__(self, name, val):
+    def nastav_hodnotu(self, name, val):
         unregistered_keys = set(val.keys()) - set(self.columns)
         if len(unregistered_keys) > 0:
             raise ValueError(f"Found unregistered keys: {unregistered_keys}. Cannot set metadata!")
@@ -154,11 +154,11 @@ class SnemovnaDataFrame(MyDataFrame):
 
     def nastav_dataframe(self, frame, odstran=[], vyber=[]):
         ordered_cols = list(vyber) + list(frame.columns)
-        ordered_cols = np.unique([x for x in ordered_cols if x in frame.columns])
+        ordered_cols = [x for x in ordered_cols if x in frame.columns]
+        ordered_cols =  list(dict.fromkeys(ordered_cols))
 
         # recreate the frame with ordered and selected columns
-        self.drop(index=self.index, inplace=True)
-        self.drop(columns=self.columns, inplace=True)
+        self.drop(index=self.index, columns=self.columns, inplace=True)
         for col in ordered_cols:
             if col not in odstran:
                 self[col] = frame[col].astype(frame[col].dtype)
@@ -180,17 +180,18 @@ class SnemovnaDataFrame(MyDataFrame):
                 log.warning(f"Pro sloupec '{key}' nebyla nalezena metadata!")
 
         ordered_idx = list(vyber) + list(m.index)
-        ordered_idx = np.unique([x for x in ordered_idx if x in m.index])
+        ordered_idx = [x for x in ordered_idx if x in m.index]
+        ordered_idx =  list(dict.fromkeys(ordered_idx))
         m = m.reindex(index=ordered_idx)
 
-        self.meta.drop(index=self.meta.index, inplace=True)
-        for key, val in m.iterrows():
-            self.meta[key] = val
+        self.meta.drop(index=self.meta.index, columns=self.meta.columns, inplace=True)
+        for col in m.columns:
+            self.meta[col] = m[col]
 
     def rozsir_meta(self, header, tabulka=None, vlastni=None):
         for key, i in header.items():
             val_dict = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
-            self.meta[key] = val_dict
+            self.meta.nastav_hodnotu(key, val_dict)
 
 class SnemovnaZipDataMixin(object):
     def stahni_zip_data(self, nazev):

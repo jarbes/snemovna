@@ -69,7 +69,7 @@ class TabulkaTypFunkceMixin(object):
 
         mask = {1: "předseda", 2: "místopředseda", 3: "ověřovatel"}
         df['typ_funkce_obecny'] = mask_by_values(df.typ_funkce_obecny__ORIG, mask).astype('string')
-        self.meta['typ_funkce_obecny'] = dict(popis='Obecný typ funkce.', tabulka='typ_funkce', vlastni=True)
+        self.meta.nastav_hodnotu('typ_funkce_obecny', dict(popis='Obecný typ funkce.', tabulka='typ_funkce', vlastni=True))
 
         self.tbl['typ_funkce'], self.tbl['_typ_funkce'] = df, _df
 
@@ -118,7 +118,7 @@ class TabulkaOsobyMixin(object):
         self.rozsir_meta(header, tabulka='osoby', vlastni=False)
 
         df["pohlavi"] = mask_by_values(df.pohlavi__ORIG, {'M': "muž", 'Z': 'žena', 'Ž': 'žena'}).astype('string')
-        self.meta['pohlavi'] = dict(popis='Pohlaví.', tabulka='osoby', vlastni=True)
+        self.meta.nastav_hodnotu('pohlavi', dict(popis='Pohlaví.', tabulka='osoby', vlastni=True))
 
         # Parsuj narození, meta informace není třeba přidávat, jsou v hlavičce
         #df['narozeni'] = pd.to_datetime(df['narozeni'], format="%d.%m.%Y", errors='coerce').dt.tz_localize(self.tzn)
@@ -177,7 +177,7 @@ class TabulkaZarazeniOsobyMixin(object):
 
         mask = {0: 'členství', 1: 'funkce'}
         df['cl_funkce'] = mask_by_values(df.cl_funkce__ORIG, mask).astype('string')
-        self.meta['cl_funkce'] = dict(popis='Status členství nebo funkce.', tabulka='zarazeni_osoby', vlastni=True)
+        self.meta.nastav_hodnotu('cl_funkce', dict(popis='Status členství nebo funkce.', tabulka='zarazeni_osoby', vlastni=True))
         self.tbl['zarazeni_osoby'], self.tbl['_zarazeni_osoby'] = df, _df
 
 class TabulkaPoslanciMixin(object):

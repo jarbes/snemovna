@@ -9,7 +9,7 @@ import pandas as pd
 from snemovna.utility import *
 
 from snemovna.Snemovna import *
-from snemovna.PoslanciOsoby import Osoby, Organy, Poslanci
+from snemovna.PoslanciOsoby import Osoby, Organy, ZarazeniOsoby, Poslanci
 from snemovna.TabulkyHlasovani import *
 
 from snemovna.setup_logger import log
@@ -65,14 +65,14 @@ class Hlasovani(TabulkaHlasovaniMixin, TabulkaZmatecneHlasovaniMixin, TabulkaZpo
 
         # Přidání indikátorů
         self.tbl['hlasovani']['je_zpochybneni'] = self.tbl['hlasovani'].id_hlasovani.isin(self.tbl['zpochybneni'].id_hlasovani.unique())
-        self.meta['je_zpochybneni'] = dict(popis='Indikátor zpochybnění hlasování', tabulka='df', vlastni=True)
+        self.meta.nastav_hodnotu('je_zpochybneni', dict(popis='Indikátor zpochybnění hlasování', tabulka='df', vlastni=True))
 
         self.tbl['hlasovani']['je_zmatecne'] = self.tbl['hlasovani'].id_hlasovani.isin(self.tbl['zmatecne'].id_hlasovani.unique())
-        self.meta['je_zmatecne'] = dict(popis='Indikátor zmatečného hlasování', tabulka='df', vlastni=True)
+        self.meta.nastav_hodnotu('je_zmatecne', dict(popis='Indikátor zmatečného hlasování', tabulka='df', vlastni=True))
 
         # Připojení informací o stenozaznamu. Pozor, nemusí být aktuální. Například pro snemovnu 2017 momentálně (16.2.2021) data chybí.
         self.tbl['hlasovani']['ma_stenozaznam'] = self.tbl['hlasovani'].id_hlasovani.isin(self.tbl['hlasovani_vazba_stenozaznam'].id_hlasovani.unique())
-        self.meta['ma_stenozaznam'] = dict(popis='Indikátor existence stenozáznamu', tabulka='df', vlastni=True)
+        self.meta.nastav_hodnotu('ma_stenozaznam', dict(popis='Indikátor existence stenozáznamu', tabulka='df', vlastni=True))
 
         suffix = '__hlasovani_vazba_stenozaznam'
         self.tbl['hlasovani'] = pd.merge(
@@ -84,7 +84,12 @@ class Hlasovani(TabulkaHlasovaniMixin, TabulkaZmatecneHlasovaniMixin, TabulkaZpo
         )
         self.drop_by_inconsistency(self.tbl['hlasovani'], suffix, 0.1, 'hlasovani', 'hlasovani_vazba_stenozaznam', inplace=True)
 
-        self.nastav_dataframe(self.tbl['hlasovani'])
+        self.nastav_dataframe(
+            self.tbl['hlasovani'],
+            odstran=['datum__ORIG', 'druh_hlasovani__ORIG', 'vysledek__ORIG', 'typ__ORIG']
+        )
+        # Uprav informace, které se přepsaly při načítání tabulek
+        self.meta.loc['id_hlasovani', 'tabulka'] = 'hlasovani'
 
         log.debug("<-- Hlasovani")
 
@@ -178,7 +183,7 @@ class Omluvy(TabulkaOmluvyMixin, HlasovaniBase, Poslanci, Organy):
         log.debug("<-- Omluvy")
 
 
-class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, HlasovaniBase, Poslanci):
+class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, Hlasovani, Poslanci, ZarazeniOsoby):
 
     def __init__(self, *args, **kwargs):
         log.debug("--> HlasovaniPoslance")
@@ -188,14 +193,50 @@ class HlasovaniPoslance(TabulkaHlasovaniPoslanceMixin, HlasovaniBase, Poslanci):
         self.nacti_hlasovani_poslance()
 
         # Připoj Poslance
-        to_skip = ['web', 'ulice', 'obec', 'psc', 'telefon', 'fax', 'psp_telefon', 'email', 'facebook', 'foto', 'zmena', 'umrti', 'adresa', 'sirka', 'delka']
         self.tbl['hlasovani_poslance'] = pd.merge(left=self.tbl['hlasovani_poslance'], right=self.tbl['poslanci'], on="id_poslanec", suffixes=("", "__poslanci"), how='left')
-        self.tbl['hlasovani_poslance'].drop(columns = to_skip, inplace=True)
         self.drop_by_inconsistency(self.tbl['hlasovani_poslance'], "__poslanci", 0.1, 'hlasovani_poslance', 'poslanci', inplace=True)
-
         self.tbl['hlasovani_poslance'] = self.tbl['hlasovani_poslance'][self.tbl['hlasovani_poslance'].id_parlament == self.snemovna.id_organ]
 
-        self.nastav_dataframe(self.tbl['hlasovani_poslance'])
+        # Připoj Hlasovani
+        hlasovani_columns = ['id_hlasovani', 'schuze', 'cislo', 'bod', 'cas',
+            'nazev_dlouhy', 'datum', 'bod__KAT',
+            'druh_hlasovani', 'je_zpochybneni', 'je_zmatecne']
+        self.tbl['hlasovani_poslance'] = pd.merge(left=self.tbl['hlasovani_poslance'], right=self.tbl['hlasovani'][hlasovani_columns], on="id_hlasovani", suffixes=("", "__hlasovani"), how='left')
+        self.drop_by_inconsistency(self.tbl['hlasovani_poslance'], "__hlasovani", 0.1, 'hlasovani_poslance', 'hlasovani', inplace=True)
+
+        ## Merge zarazeni_osoby
+        zarazeni_osoby = self.tbl['zarazeni_osoby']
+        poslanci = zarazeni_osoby[(zarazeni_osoby.do_o.isna()) & (zarazeni_osoby.id_organ==self.snemovna.id_organ) & (zarazeni_osoby.cl_funkce=='členství')] # všichni poslanci
+        strany = zarazeni_osoby[(zarazeni_osoby.id_osoba.isin(poslanci.id_osoba)) & (zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (zarazeni_osoby.do_o.isna()) & (zarazeni_osoby.cl_funkce=='členství')]
+        self.tbl['hlasovani_poslance'] = pd.merge(self.tbl['hlasovani_poslance'], strany[['id_osoba', 'zkratka']], on='id_osoba', how="left")
+        ## Merge Strana
+        zarazeni_osoby = self.tbl['zarazeni_osoby']
+        snemovna_od = self.snemovna.od_organ
+        snemovna_do = self.snemovna.do_organ
+
+        snemovna_cond = (zarazeni_osoby.od_o >= snemovna_od) & (zarazeni_osoby.nazev_typ_organ_cz == "Klub") & (zarazeni_osoby.cl_funkce=='členství')
+        if pd.isnull(snemovna_do) == False:
+            snemovna_cond = snemovna_cond | (zarazeni_osoby.do_o >= snemovna_do)
+        s = zarazeni_osoby[snemovna_cond].groupby('id_osoba').size().sort_values()
+        prebehlici = s[s > 1]
+        #print("prebehlici: ", prebehlici)
+
+        for id_prebehlik in prebehlici.index:
+            for idx, row in zarazeni_osoby[ snemovna_cond & (zarazeni_osoby.id_osoba == id_prebehlik)].iterrows():
+                od, do, id_organ, zkratka =  row['od_o'], row['do_o'], row['id_organ'], row['zkratka']
+                #print(id_prebehlik, od, do, id_organ, zkratka)
+                self.tbl['hlasovani_poslance'].zkratka.mask((self.tbl['hlasovani_poslance'].datum >= od) & (self.tbl['hlasovani_poslance'].datum <= do) & (self.tbl['hlasovani_poslance'].id_osoba == id_prebehlik), zkratka, inplace=True)
+
+
+        self.nastav_dataframe(
+            self.tbl['hlasovani_poslance'],
+            vyber=['id_hlasovani', 'nazev_dlouhy', 'vysledek', 'id_poslanec', 'id_osoba', 'pred', 'jmeno', 'prijmeni', 'za'],
+            odstran = [
+              'vysledek__ORIG', 'pohlavi__ORIG',
+              'od_parlament', 'do_parlament',
+              'web', 'ulice', 'obec', 'psc', 'telefon', 'fax', 'psp_telefon', 'email', 'facebook', 'foto', 'zmena', 'umrti', 'adresa', 'sirka', 'delka'
+           ]
+        )
 
         log.debug("<-- HlasovaniPoslance")
 

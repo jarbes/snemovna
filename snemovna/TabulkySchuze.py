@@ -45,7 +45,7 @@ class TabulkaSchuzeMixin(object):
 
         mask = {None: 'schválený pořad', 1: 'navržený pořad'}
         df['pozvanka'] = mask_by_values(df.pozvanka__ORIG, mask)
-        self.meta['pozvanka'] = dict(popis='Druh záznamu.', tabulka='schuze', vlastni=True)
+        self.meta.nastav_hodnotu('pozvanka', dict(popis='Druh záznamu.', tabulka='schuze', vlastni=True))
 
         self.tbl['schuze'], self.tbl['_schuze'] = df, _df
 
@@ -68,10 +68,10 @@ class TabulkaSchuzeStavMixin(object):
         assert df.id_schuze.size == df.id_schuze.nunique(), "Schůze může mít určen pouze jeden stav!"
 
         df['stav'] = df.stav__ORIG.astype(str).mask(df.stav__ORIG == 1, "OK").mask(df.stav__ORIG == 2, "pořad neschválen, schůze ukončena")
-        self.meta['stav'] = dict(popis='Stav schůze.', tabulka='schuze_stav', vlastni=True)
+        self.meta.nastav_hodnotu('stav', dict(popis='Stav schůze.', tabulka='schuze_stav', vlastni=True))
 
         df['typ'] = df.typ__ORIG.astype(str).mask(df.typ__ORIG == 1, "řádná").mask(df.typ__ORIG == 2, "mimořádná")
-        self.meta['typ'] = dict(popis='Typ schůze.', tabulka='schuze_stav', vlastni=True)
+        self.meta.nastav_hodnotu('typ', dict(popis='Typ schůze.', tabulka='schuze_stav', vlastni=True))
 
         self.tbl['schuze_stav'], self.tbl['_schuze_stav'] = df, _df
 
@@ -89,7 +89,7 @@ class TabulkaBodStavMixin(object):
         self.rozsir_meta(header, tabulka='bod_stav', vlastni=False)
 
         df['id_bod_stav__KAT'] = df.id_bod_stav.astype(str).mask(df.id_bod_stav == 3, 'neprojednatelný')
-        self.meta['id_bod_stav__KAT'] = dict(popis='Typ stavu bodu schůze.', tabulka='bod_stav', vlastni=True)
+        self.meta.nastav_hodnotu('id_bod_stav__KAT', dict(popis='Typ stavu bodu schůze.', tabulka='bod_stav', vlastni=True))
 
         self.tbl['bod_stav'], self.tbl['_bod_stav'] = df, _df
 

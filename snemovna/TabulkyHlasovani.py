@@ -49,25 +49,25 @@ class TabulkaHlasovaniMixin(object):
         # Přidej 'datum'
         df['datum'] = pd.to_datetime(df['datum__ORIG'] + ' ' + df['cas'], format='%d.%m.%Y %H:%M')
         df['datum'] = df['datum'].dt.tz_localize(self.tzn)
-        self.meta['datum'] =  dict(popis='Datum hlasování', tabulka='hlasovani', vlastni=True)
+        self.meta.nastav_hodnotu('datum', dict(popis='Datum hlasování', tabulka='hlasovani', vlastni=True))
 
         # Přepiš 'cas'
         df['cas'] = df['datum'].dt.time
-        self.meta['cas'] = dict(popis='Čas hlasování', tabulka='hlasovani', vlastni=False)
+        self.meta.nastav_hodnotu('cas', dict(popis='Čas hlasování', tabulka='hlasovani', vlastni=False))
 
         # Interpretuj 'bod pořadu'
         df["bod__KAT"] = df.bod.astype('string').mask(df.bod < 1, 'procedurální nebo bez přiděleného čísla').mask(df.bod >= 1, "normální")
-        self.meta['bod__KAT'] = dict(popis='Katogorie bodu hlasování', tabulka='hlasovani', vlastni=True)
+        self.meta.nastav_hodnotu('bod__KAT', dict(popis='Katogorie bodu hlasování', tabulka='hlasovani', vlastni=True))
 
         # Interpretuj 'výsledek'
         mask = {'A': "přijato", 'R': 'zamítnuto'}
         df["vysledek"] = mask_by_values(df.vysledek__ORIG, mask).astype('string')
-        self.meta['vysledek'] = dict(popis='Výsledek hlasování', tabulka='hlasovani', vlastni=True)
+        self.meta.nastav_hodnotu('vysledek', dict(popis='Výsledek hlasování', tabulka='hlasovani', vlastni=True))
 
         # Interpretuj 'druh hlasování'
         mask = {'N': 'normální', 'R': 'ruční'}
         df["druh_hlasovani"] = mask_by_values(df.druh_hlasovani__ORIG, mask).astype('string')
-        self.meta['druh_hlasovani'] =  dict(popis='Druh hlasování', tabulka='hlasovani', vlastni=True)
+        self.meta.nastav_hodnotu('druh_hlasovani', dict(popis='Druh hlasování', tabulka='hlasovani', vlastni=True))
 
         self.tbl['hlasovani'], self.tbl['_hlasovani'] = df, _df
 
@@ -104,7 +104,7 @@ class TabulkaZpochybneniHlasovaniMixin(object):
         # 1 - pouze sdělení pro stenozáznam, není požadováno opakování hlasování.
         maska = {0: "žádost o opakování hlasování", 1: "pouze sdělení pro stenozáznam"}
         df["mode__KAT"] = mask_by_values(df["mode"], maska).astype('string')
-        self.meta['mode__KAT'] = dict(popis='Typ zpochybnění', tabulka='zpochybneni', vlastni=True)
+        self.meta.nastav_hodnotu('mode__KAT', dict(popis='Typ zpochybnění', tabulka='zpochybneni', vlastni=True))
         self.tbl['zpochybneni'], self.tbl['_zpochybneni'] = df, _df
 
 class TabulkaHlasovaniVazbaStenozaznamMixin(object):
@@ -123,7 +123,7 @@ class TabulkaHlasovaniVazbaStenozaznamMixin(object):
 
         # Interpretuj 'typ'
         df["typ"] = mask_by_values(df.typ__ORIG, {0: "hlasovani zmíněno v stenozáznamu", 1: "hlasování není zmíněno v stenozáznamu"}).astype('string')
-        self.meta['typ'] = dict(popis='Typ vazby na stenozáznam.', tabulka='vazba_stenozaznam', vlastni=True)
+        self.meta.nastav_hodnotu('typ', dict(popis='Typ vazby na stenozáznam.', tabulka='vazba_stenozaznam', vlastni=True))
         # Vazba na stenozaznam nemusí být aktuální. Například pro sněmovnu 2017 je tabulka nevyplněná.
         self.tbl['hlasovani_vazba_stenozaznam'], self.tbl['_hlasovani_vazba_stenozaznam'] = df, _df
 
@@ -165,11 +165,11 @@ class TabulkaOmluvyMixin(object):
         self.rozsir_meta(header, tabulka='omluvy', vlastni=False)
 
         df['od'] = format_to_datetime_and_report_skips(df, 'od__ORIG', to_format='%H:%M').dt.tz_localize(self.tzn).dt.time
-        self.meta['od'] = dict(popis='Čas začátku omluvy.', tabulka='omluvy', vlastni=True)
+        self.meta.nastav_hodnotu('od', dict(popis='Čas začátku omluvy.', tabulka='omluvy', vlastni=True))
         df['do'] = format_to_datetime_and_report_skips(df, 'do__ORIG', to_format='%H:%M').dt.tz_localize(self.tzn).dt.time
-        self.meta['do'] = dict(popis='Čas konce omluvy.', tabulka='omluvy', vlastni=True)
+        self.meta.nastav_hodnotu('do', dict(popis='Čas konce omluvy.', tabulka='omluvy', vlastni=True))
         df['den'] = format_to_datetime_and_report_skips(df, 'den__ORIG', to_format='%d.%m.%Y').dt.tz_localize(self.tzn)
-        self.meta['den'] = dict(popis='Datum omluvy [den].', tabulka='omluvy', vlastni=True)
+        self.meta.nastav_hodnotu('den', dict(popis='Datum omluvy [den].', tabulka='omluvy', vlastni=True))
 
         # TODO: Přidej sloupec typu 'datum_od', 'datum_do'
         # O začátcích a koncích omluv je možné něco zjistit z tabulky Stentexty, ale nebude to moc spolehlivé.
@@ -200,8 +200,8 @@ class TabulkaHlasovaniPoslanceMixin(object):
         self.rozsir_meta(header, tabulka='hlasovani_poslance', vlastni=False)
 
         mask = {'A': 'ano', 'B': 'ne', 'N': 'ne', 'C': 'zdržení se', 'F': 'nehlasování', '@': 'nepřihlášení', 'M': 'omluva', 'W': 'hlasování bez slibu', 'K': 'zdržení/nehlasování'}
-        df['vysledek'] = mask_by_values(df.vysledek__ORIG, mask)
-        self.meta['vysledek'] = dict(popis='Hlasování jednotlivého poslance.', tabulka='hlasovani_poslance', vlastni=True)
+        df['vysledek'] = mask_by_values(df.vysledek__ORIG, mask).astype('string')
+        self.meta.nastav_hodnotu('vysledek', dict(popis='Hlasování jednotlivého poslance.', tabulka='hlasovani_poslance', vlastni=True))
 
         self.tbl['hlasovani_poslance'], self.tbl['_hlasovani_poslance'] = df, _df
 

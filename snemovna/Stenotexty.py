@@ -52,10 +52,10 @@ class StenoTexty(TabulkaStenotextyMixin, StenoRecnici, Steno, ZarazeniOsoby, Org
         self.tbl['steno_texty'].loc[~self.tbl['steno_texty'].id_rec.isna(), 'turn_surrogate'] = self.tbl['steno_texty'].turn
         self.tbl['steno_texty']['turn_surrogate'] = self.tbl['steno_texty'].groupby("schuze")['turn_surrogate'].ffill().astype('Int64')
         self.tbl['steno_texty']['id_rec_surrogate'] = self.tbl['steno_texty']['id_rec']
-        self.meta['turn_surrogate'] = dict(popis='Číslo stenozáznamu (turn), ve kterém byla nalezena identifikace řečníka.', tabulka='df', vlastni=True)
+        self.meta.nastav_hodnotu('turn_surrogate', dict(popis='Číslo stenozáznamu (turn), ve kterém byla nalezena identifikace řečníka.', tabulka='df', vlastni=True))
 
         self.tbl['steno_texty']['id_rec_surrogate'] = self.tbl['steno_texty'].groupby("schuze")['id_rec_surrogate'].ffill().astype('Int64')
-        self.meta['id_rec_surrogate'] =  dict(popis='Identifikace řečníka na základě zpětmého hledání v stenozáznamech (turn).', tabulka='df', vlastni=True)
+        self.meta.nastav_hodnotu('id_rec_surrogate', dict(popis='Identifikace řečníka na základě zpětmého hledání v stenozáznamech (turn).', tabulka='df', vlastni=True))
 
         # připoj osobu ze steno_rec ... we simply add id_osoba to places where it's missing
         m = pd.merge(left=self.tbl['steno_texty'], right=self.tbl['steno_recnici'][['schuze', "turn", "aname", 'id_osoba']], left_on=["schuze", "turn_surrogate", "id_rec_surrogate"], right_on=["schuze", "turn", "aname"], how="left")

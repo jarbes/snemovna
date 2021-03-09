@@ -189,7 +189,11 @@ class TypFunkce(TabulkaTypFunkceMixin, TypOrgan):
         self.tbl['typ_funkce'].drop(columns=["priorita", "priorita__typ_organ"], inplace=True)
         self.tbl['typ_funkce'] = self.drop_by_inconsistency(self.tbl['typ_funkce'], suffix, 0.1, t1_name='typ_funkce', t2_name='typ_organ', t1_on='id_typ_organ', t2_on='id_typ_organ')
 
-        self.nastav_dataframe(self.tbl['typ_funkce'])
+        self.nastav_dataframe(
+            self.tbl['typ_funkce'],
+            vyber=['id_typ_funkce', 'typ_funkce_cz', 'typ_funkce_en', 'typ_funkce_obecny'],
+            odstran=['typ_funkce_obecny__ORIG']
+        )
 
         log.debug("<-- TypFunkce")
 
@@ -349,8 +353,8 @@ class Poslanci(TabulkaPoslanciPkgpsMixin, TabulkaPoslanciMixin, ZarazeniOsoby, O
         self.tbl['poslanci'].drop(columns=['id_organ__organy'], inplace=True)
         self.tbl['poslanci'].rename(columns={'nazev_organ_cz': 'nazev_kandidatka_cz', 'zkratka': 'zkratka_kandidatka'}, inplace=True)
         self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'organy', t1_on='id_organ', t2_on='id_kandidatka', inplace=True)
-        self.meta['nazev_kandidatka_cz'] = {"popis": 'Název strany, za kterou poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True}
-        self.meta['zkratka_kandidatka'] = {"popis": 'Zkratka strany, za kterou poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True}
+        self.meta.nastav_hodnotu('nazev_kandidatka_cz', {"popis": 'Název strany, za kterou poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('zkratka_kandidatka', {"popis": 'Zkratka strany, za kterou poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True})
 
         # Připoj informace o kraji
         suffix = "__organy"
@@ -358,8 +362,8 @@ class Poslanci(TabulkaPoslanciPkgpsMixin, TabulkaPoslanciMixin, ZarazeniOsoby, O
         self.tbl['poslanci'].drop(columns=['id_organ__organy'], inplace=True)
         self.tbl['poslanci'].rename(columns={'nazev_organ_cz': 'nazev_kraj_cz', 'zkratka': 'zkratka_kraj'}, inplace=True)
         self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'organy', t1_on='id_kraj', t2_on='id_organ', inplace=True)
-        self.meta['nazev_kraj_cz'] = {"popis": 'Název kraje, za který poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True}
-        self.meta['zkratka_kraj'] = {"popis": 'Zkratka kraje, za který poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True}
+        self.meta.nastav_hodnotu('nazev_kraj_cz', {"popis": 'Název kraje, za který poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('zkratka_kraj', {"popis": 'Zkratka kraje, za který poslanec kandidoval, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True})
 
         # Pripoj data nastoupení do parlamentu, příp. odstoupení z parlamentu
         parlament = self.tbl['zarazeni_osoby'][(self.tbl['zarazeni_osoby'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['zarazeni_osoby'].nazev_typ_organ_cz == "Parlament") & (self.tbl['zarazeni_osoby'].cl_funkce=='členství')].copy()
@@ -368,9 +372,9 @@ class Poslanci(TabulkaPoslanciPkgpsMixin, TabulkaPoslanciMixin, ZarazeniOsoby, O
         parlament.rename(columns={'id_organ': 'id_parlament', 'od_o': 'od_parlament', 'do_o': 'do_parlament'}, inplace=True)
         self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], parlament[['id_osoba', 'id_parlament', 'od_parlament', 'do_parlament']], on='id_osoba', how="left")
         self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'zarazeni_osoby')
-        self.meta['id_parlament'] = {"popis": 'Identifikátor parlamentu, jehož byli poslanci členy, viz Organy:id_organ', 'tabulka': 'df', 'vlastni': True}
-        self.meta['od_parlament'] = {"popis": 'Datum začátku zařazení poslanců do parlamentu, viz Organy:od_o', 'tabulka': 'df', 'vlastni': True}
-        self.meta['do_parlament'] = {"popis": 'Datum konce zařazení poslanců do parlamentu, viz Organy:do_o', 'tabulka': 'df', 'vlastni': True}
+        self.meta.nastav_hodnotu('id_parlament', {"popis": 'Identifikátor parlamentu, jehož byli poslanci členy, viz Organy:id_organ', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('od_parlament', {"popis": 'Datum začátku zařazení poslanců do parlamentu, viz Organy:od_o', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('do_parlament', {"popis": 'Datum konce zařazení poslanců do parlamentu, viz Organy:do_o', 'tabulka': 'df', 'vlastni': True})
 
         # Připoj informace o posledním poslaneckém klubu z 'zarazeni_osoby'.
         kluby = self.tbl['zarazeni_osoby'][(self.tbl['zarazeni_osoby'].id_osoba.isin(self.tbl['poslanci'].id_osoba)) & (self.tbl['zarazeni_osoby'].nazev_typ_organ_cz == "Klub") & (self.tbl['zarazeni_osoby'].cl_funkce=='členství')].copy()
@@ -378,13 +382,16 @@ class Poslanci(TabulkaPoslanciPkgpsMixin, TabulkaPoslanciMixin, ZarazeniOsoby, O
         kluby.rename(columns={'id_organ': 'id_klub', 'nazev_organ_cz': 'nazev_klub_cz', 'zkratka': 'zkratka_klub', 'od_o': 'od_klub', 'do_o': 'do_klub'}, inplace=True)
         self.tbl['poslanci'] = pd.merge(self.tbl['poslanci'], kluby[['id_osoba', 'id_klub', 'nazev_klub_cz', 'zkratka_klub', 'od_klub', 'do_klub']], on='id_osoba', how="left")
         self.tbl['poslanci'] = self.drop_by_inconsistency(self.tbl['poslanci'], suffix, 0.1, 'poslanci', 'zarazeni_osoby')
-        self.meta['id_klub'] = {"popis": 'Identifikátor posledního klubu, do něhož byli poslanci zařazeni, viz Organy:id_organ', 'tabulka': 'df', 'vlastni': True}
-        self.meta['nazev_klub_cz'] = {"popis": 'Název posledního klubu, do něhož byli poslanci zařazeni, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True}
-        self.meta['zkratka_klub'] = {"popis": 'Zkratka posledního klubu, do něhož byli poslanci zařazeni, viz Organy:zkratka', 'tabulka': 'df', 'vlastni': True}
-        self.meta['od_klub'] = {"popis": 'Datum začátku zařazení poslanců do posledního klubu, viz Organy:od_o', 'tabulka': 'df', 'vlastni': True}
-        self.meta['do_klub'] = {"popis": 'Datum konce zařazení poslanců do posledního klubu, viz Organy:do_o', 'tabulka': 'df', 'vlastni': True}
+        self.meta.nastav_hodnotu('id_klub', {"popis": 'Identifikátor posledního klubu, do něhož byli poslanci zařazeni, viz Organy:id_organ', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('nazev_klub_cz', {"popis": 'Název posledního klubu, do něhož byli poslanci zařazeni, viz Organy:nazev_organ_cz', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('zkratka_klub', {"popis": 'Zkratka posledního klubu, do něhož byli poslanci zařazeni, viz Organy:zkratka', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('od_klub', {"popis": 'Datum začátku zařazení poslanců do posledního klubu, viz Organy:od_o', 'tabulka': 'df', 'vlastni': True})
+        self.meta.nastav_hodnotu('do_klub', {"popis": 'Datum konce zařazení poslanců do posledního klubu, viz Organy:do_o', 'tabulka': 'df', 'vlastni': True})
 
-        self.nastav_dataframe(self.tbl['poslanci'])
+        self.nastav_dataframe(
+            self.tbl['poslanci'],
+            odstran=['pohlavi__ORIG']
+        )
 
         log.debug("<-- Poslanci")
 

@@ -64,7 +64,7 @@ class TabulkaStenoRecniciMixin(object):
         mask = { None: 'neznámo', 0: 'neznámo', 1: 'nezpracováno', 2: 'předsedající (ověřeno)',
             3: 'řečník (ověřeno)', 4: 'předsedající', 5: 'řečník' }
         df['druh'] = mask_by_values(df.druh__ORIG, mask).astype('string')
-        self.meta['druh'] = dict(popis='Druh vystoupení řečníka.', tabulka='steno_recnici', vlastni=True)
+        self.meta.nastav_hodnotu('druh', dict(popis='Druh vystoupení řečníka.', tabulka='steno_recnici', vlastni=True))
 
         self.tbl['steno_recnici'], self.tbl['_steno_recnici'] = df, _df
 
