@@ -27,14 +27,17 @@ class PoslanciOsobyBase(SnemovnaZipDataMixin, SnemovnaDataFrame):
 
         log.debug("<-- PoslanciOsobyBase")
 
-class TypOrganu(TabulkaTypOrganuMixin, PoslanciOsobyBase):
+class TypOrgan(TabulkaTypOrganMixin, PoslanciOsobyBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.nacti_typ_organu()
-        self.nastav_dataframe(self.tbl['typ_organu'])
+        self.nacti_typ_organ()
+        self.nastav_dataframe(
+            self.tbl['typ_organ'],
+            odstran=['priorita'],
+            vyber=['id_typ_organ', 'nazev_typ_organ_cz', 'nazev_typ_organ_en'])
 
 
-class Organy(TabulkaOrganyMixin, TypOrganu):
+class Organy(TabulkaOrganyMixin, TypOrgan):
     def __init__(self, *args, **kwargs):
         log.debug("--> Organy")
         super().__init__(*args, **kwargs)
@@ -42,12 +45,12 @@ class Organy(TabulkaOrganyMixin, TypOrganu):
         self.nacti_organy()
 
         # Připoj Typu orgánu
-        suffix = "__typ_organu"
-        self.tbl['organy'] = pd.merge(left=self.tbl['organy'], right=self.tbl['typ_organu'], on="id_typ_organ", suffixes=("",suffix), how='left')
+        suffix = "__typ_organ"
+        self.tbl['organy'] = pd.merge(left=self.tbl['organy'], right=self.tbl['typ_organ'], on="id_typ_organ", suffixes=("",suffix), how='left')
         # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš k ničemu nejsou.
         # Tímto se vyhneme varování funkce 'drop_by_inconsistency.
-        self.tbl['organy'].drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
-        self.tbl['organy'] = self.drop_by_inconsistency(self.tbl['organy'], suffix, 0.1, 'organy', 'typ_organu')
+        self.tbl['organy'].drop(columns=["priorita", "priorita__typ_organ"], inplace=True)
+        self.tbl['organy'] = self.drop_by_inconsistency(self.tbl['organy'], suffix, 0.1, 'organy', 'typ_organ')
 
         # Nastav volební období, pokud chybí
         if self.volebni_obdobi == None:
@@ -165,7 +168,7 @@ class Organy(TabulkaOrganyMixin, TypOrganu):
 
 # Tabulka definuje typ funkce v orgánu - pro každý typ orgánu jsou definovány typy funkcí. Texty názvů typu funkce se používají při výpisu namísto textů v Funkce:nazev_funkce_LL .
 # Třída TypFunkce nebere v úvahu závislost na volebnim obdobi, protože tu je možné získat až pomocí dceřinných tříd (ZarazeniOsoby).
-class TypFunkce(TabulkaTypFunkceMixin, TypOrganu):
+class TypFunkce(TabulkaTypFunkceMixin, TypOrgan):
     def __init__(self, *args, **kwargs):
         log.debug("--> TypFunkce")
         super().__init__(*args, **kwargs)
@@ -173,18 +176,18 @@ class TypFunkce(TabulkaTypFunkceMixin, TypOrganu):
         self.nacti_typ_funkce()
 
         # Připoj Typu orgánu
-        suffix="__typ_organu"
+        suffix="__typ_organ"
         self.tbl['typ_funkce'] = pd.merge(
             left=self.tbl['typ_funkce'],
-            right=self.tbl['typ_organu'],
+            right=self.tbl['typ_organ'],
             on="id_typ_organ",
             suffixes=("", suffix),
             how='left'
         )
         # Odstraň nedůležité sloupce 'priorita', protože se vzájemně vylučují a nejspíš ani k ničemu nejsou.
         # Tímto se vyhneme varování v 'drop_by_inconsistency'.
-        self.tbl['typ_funkce'].drop(columns=["priorita", "priorita__typ_organu"], inplace=True)
-        self.tbl['typ_funkce'] = self.drop_by_inconsistency(self.tbl['typ_funkce'], suffix, 0.1, t1_name='typ_funkce', t2_name='typ_organu', t1_on='id_typ_organ', t2_on='id_typ_organ')
+        self.tbl['typ_funkce'].drop(columns=["priorita", "priorita__typ_organ"], inplace=True)
+        self.tbl['typ_funkce'] = self.drop_by_inconsistency(self.tbl['typ_funkce'], suffix, 0.1, t1_name='typ_funkce', t2_name='typ_organ', t1_on='id_typ_organ', t2_on='id_typ_organ')
 
         self.nastav_dataframe(self.tbl['typ_funkce'])
 
@@ -220,7 +223,7 @@ class Funkce(TabulkaFunkceMixin, Organy, TypFunkce):
         x = self.tbl['funkce']
         idx = x[(x.id_typ_organ == 42) & (x.id_typ_organ__typ_funkce == 15)].index
         log.debug(f"Řešení známé nekonzistence v datech: Upřednostňuji sloupce z tabulky 'funkce' před 'typ_funkce' pro {len(idx)} hodnot.")
-        to_update = ['id_typ_organ', 'typ_id_typ_organ', 'nazev_typ_organ_cz', 'nazev_typ_organ_en', 'typ_organu_obecny']
+        to_update = ['id_typ_organ', 'typ_id_typ_organ', 'nazev_typ_organ_cz', 'nazev_typ_organ_en', 'typ_organ_obecny']
         for i in to_update:
             x.at[idx, i + '__typ_funkce'] = x.loc[idx][i]
 

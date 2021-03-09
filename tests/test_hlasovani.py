@@ -9,7 +9,7 @@ class TestHlasovani(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         print('setUpClass')
-        cls.hlasovani = Hlasovani(volebni_obdobi=2017, data_dir="./data", stahni=False)
+        cls.hlasovani = Hlasovani(volebni_obdobi=2017, stahni=True)
         pass
 
     @classmethod
@@ -26,11 +26,10 @@ class TestHlasovani(unittest.TestCase):
         pass
 
     def test_nacti_hlasovani(self):
-        ret = self.hlasovani.nacti_hlasovani()
-        self.assertIsInstance(ret, tuple)
-        self.assertEqual(len(ret), 2)
-        self.assertIsInstance(ret[0], pd.core.frame.DataFrame)
-        self.assertIsInstance(ret[1], pd.core.frame.DataFrame)
+        print(self)
+        #self.assertIsInstance(TestHlasovani.tbl['hlasovani'], pd.core.frame.DataFrame)
+        #self.assertIsInstance(TestHlasovani.tbl['_hlasovani'], pd.core.frame.DataFrame)
+        pass
 
 if __name__ == '__main__':
     unittest.main()

@@ -51,7 +51,7 @@ class TabulkaSchuzeMixin(object):
 
 class TabulkaSchuzeStavMixin(object):
    def nacti_schuze_stav(self):
-        self.paths['schuze_stav'] = f"{self.parameters['data_dir']}/schuze_stav.unl"
+        path = f"{self.parameters['data_dir']}/schuze_stav.unl"
         header = {
             'id_schuze': MItem('Int64', 'Identifikátor schůze, viz Schuze:id_schuze.'),
             'stav__ORIG': MItem('Int64', 'Stav schůze: 1 - OK, 2 - pořad schůze nebyl schválen a schůze byla ukončena.'),
@@ -61,7 +61,7 @@ class TabulkaSchuzeStavMixin(object):
             'tm_line': MItem('string', 'Podobné jako SchuzeStav:text_st, pouze psáno na začátku s velkým písmenem a ukončeno tečkou.')
         }
 
-        _df = pd.read_csv(self.paths['schuze_stav'], sep="|", names = header,  index_col=False, encoding='cp1250')
+        _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'schuze_stav')
         self.rozsir_meta(header, tabulka='schuze_stav', vlastni=False)
 

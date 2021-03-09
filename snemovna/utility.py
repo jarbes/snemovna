@@ -45,8 +45,11 @@ def popis_tabulku(frame, meta=None, schovej=[]):
     print(f"Počet řádků v tabulce: {df.index.size}")
     print()
 
-    print(f"Nenalyzované sloupce: {list(set(frame.columns) - set(df.columns))}")
-    print()
+    neanalyzovane = list(set(frame.columns) - set(df.columns))
+    if len(neanalyzovane) > 0:
+        print(f"Nenalyzované sloupce: {neanalyzovane}")
+        print()
+
     uniq = df.nunique()
     is_null = df.isnull().sum()
     not_null = len(df) - is_null
@@ -55,11 +58,11 @@ def popis_tabulku(frame, meta=None, schovej=[]):
         "počet unikátních hodnot": uniq.values,
         "počet nenulových hodnot": not_null.values,
         "typ": df.dtypes.astype(str)
-    }).set_index('sloupec').sort_values(by="počet unikátních hodnot", ascending=False)
+    })#.set_index('sloupec')#sort_values(by="počet unikátních hodnot", ascending=False)
 
-    if meta != None:
-        for column in meta.data:
-            out[column] = meta.data[column]
+    if isinstance(meta, pd.DataFrame):
+        for column in meta:
+            out[column] = meta[column]
 
     sloupce_s_jedinou_hodnotou = out[out["počet unikátních hodnot"] == 1]
     if len(sloupce_s_jedinou_hodnotou) == 0:

@@ -8,10 +8,37 @@ from datetime import datetime
 from uuid import uuid4
 
 import pandas as pd
+import numpy as np
 
 from snemovna.Helpers import *
 from snemovna.utility import *
 from snemovna.setup_logger import log
+
+
+class SnemovnaMeta(MyDataFrame):
+    def __init__(self, cols=[], defaults={}, dtypes={}, index_name='name'):
+        # Create an empty dataframe with defined columns
+        columns = set(cols + [index_name] + list(defaults.keys()) + list(dtypes.keys()))
+        super().__init__([], columns=columns)
+
+        # Register custom variables that should not mix with the dataframe columns
+        self._metadata = ['_cols', '_defaults', '_dtypes', '_index_name']
+        self._cols, self._defaults, self._dtypes = cols, defaults, dtypes
+        self._index_name = index_name
+
+        # Set index
+        self.set_index(index_name, inplace=True)
+
+    def __setitem__(self, name, val):
+        unregistered_keys = set(val.keys()) - set(self.columns)
+        if len(unregistered_keys) > 0:
+            raise ValueError(f"Found unregistered keys: {unregistered_keys}. Cannot set metadata!")
+        missing_keys = self._defaults.keys() - val.keys()
+        for k in missing_keys:
+            val[k] = self._defaults[k]
+
+        for k, i in val.items():
+            self.at[name, k] = i
 
 
 class SnemovnaDataFrame(MyDataFrame):
@@ -32,7 +59,7 @@ class SnemovnaDataFrame(MyDataFrame):
     snemovna : Int64
         objekt obsahujici data aktualni snemovny, defaultně None, hodnota se nastaví až v dětské třídě Orgány
     tzn : pytz formát
-        časová zóna
+          časová zóna
     data_dir : string
         adresář, do kterého se ukládají data
     url : string
@@ -54,19 +81,17 @@ class SnemovnaDataFrame(MyDataFrame):
     def __init__(self, volebni_obdobi=None, data_dir='./data', *args, **kwargs):
         log.debug("--> SnemovnaDataFrame")
         log.debug(f"Base kwargs: {kwargs}")
-        super(SnemovnaDataFrame, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._metadata = [
-            "df", "meta", 'paths', 'tbl', 'parameters',
+            "meta", 'tbl', 'parameters',
             "volební období", "snemovna", "tzn"
         ]
 
-        self.df = pd.DataFrame()
-        self.meta = Meta(
+        self.meta = SnemovnaMeta(
             index_name='sloupec',
             dtypes=dict(popis='string', tabulka='string', vlastni='bool', aktivni='bool'),
             defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
         )
-        self.paths = {}
         self.tbl = {}
         self.volebni_obdobi = volebni_obdobi
         self.snemovna = None
@@ -74,21 +99,8 @@ class SnemovnaDataFrame(MyDataFrame):
 
         self.parameters = {}
         self.parameters['data_dir'] = data_dir
-        #log.debug(f"SnemovnaDataFrame1: {self.parameters}")
-        #self.parameters['data_dir'] = data_dir
-        #self.parameters['stazeno'] = stazeno
-        #self.parameters['stahni'] = stahni
-        #log.debug(f"SnemovnaDataFrame2: {self.parameters}")
 
         log.debug("<-- SnemovnaDataFrame")
-
-    def nastav_dataframe(self, frame):
-        self.df = frame
-        self.drop(index=self.index, inplace=True)
-        self.drop(columns=self.columns, inplace=True)
-        for col in frame.columns:
-            self[col] = frame[col].astype(frame[col].dtype)
-        self.nastav_meta()
 
     def pripoj_data(self, obj, jmeno=''):
         for key in obj.paths:
@@ -103,10 +115,10 @@ class SnemovnaDataFrame(MyDataFrame):
         return obj
 
     def popis(self):
-        popis_tabulku(self.df, self.meta, schovej=['aktivni'])
+        popis_tabulku(self, self.meta, schovej=['aktivni', 'sloupec'])
 
     def popis_sloupec(self, sloupec):
-        popis_sloupec(self.df, sloupec)
+        popis_sloupec(self, sloupec)
 
     def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False):
         inconsistency = {}
@@ -140,20 +152,45 @@ class SnemovnaDataFrame(MyDataFrame):
 
         return ret
 
-    def nastav_meta(self):
-        for c in self.meta:
-            if c not in self.df.columns:
-                self.meta[c] = {"aktivni": False}
-            else:
-                self.meta[c] = {"aktivni": True}
+    def nastav_dataframe(self, frame, odstran=[], vyber=[]):
+        ordered_cols = list(vyber) + list(frame.columns)
+        ordered_cols = np.unique([x for x in ordered_cols if x in frame.columns])
 
-        for c in self.df.columns:
-            if c not in self.meta:
-                log.warning(f"Pro sloupec '{c}' nebyla nalezena metadata!")
+        # recreate the frame with ordered and selected columns
+        self.drop(index=self.index, inplace=True)
+        self.drop(columns=self.columns, inplace=True)
+        for col in ordered_cols:
+            if col not in odstran:
+                self[col] = frame[col].astype(frame[col].dtype)
+
+        self.nastav_meta(odstran=odstran, vyber=vyber)
+
+    def nastav_meta(self, odstran=[], vyber=[]):
+        m = self.meta.copy()
+        for key in m.index:
+            if key in odstran:
+                m.loc[key, 'aktivni'] = False
+            elif key not in self.columns:
+                m.loc[key, 'aktivni'] = False
+            else:
+                m.loc[key, 'aktivni'] = True
+
+        for key in self.columns:
+            if key not in m.index:
+                log.warning(f"Pro sloupec '{key}' nebyla nalezena metadata!")
+
+        ordered_idx = list(vyber) + list(m.index)
+        ordered_idx = np.unique([x for x in ordered_idx if x in m.index])
+        m = m.reindex(index=ordered_idx)
+
+        self.meta.drop(index=self.meta.index, inplace=True)
+        for key, val in m.iterrows():
+            self.meta[key] = val
 
     def rozsir_meta(self, header, tabulka=None, vlastni=None):
-        for k, i in header.items():
-            self.meta[k] = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
+        for key, i in header.items():
+            val_dict = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
+            self.meta[key] = val_dict
 
 class SnemovnaZipDataMixin(object):
     def stahni_zip_data(self, nazev):

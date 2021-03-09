@@ -11,21 +11,21 @@ from snemovna.Snemovna import *
 from snemovna.setup_logger import log
 
 
-class TabulkaTypOrganuMixin(object):
-    def nacti_typ_organu(self):
+class TabulkaTypOrganMixin(object):
+    def nacti_typ_organ(self):
         path = f"{self.parameters['data_dir']}/typ_organu.unl"
         header = {
             'id_typ_organ': MItem('Int64', 'Identifikátor typu orgánu'),
             'typ_id_typ_organ': MItem('Int64', 'Identifikátor nadřazeného typu orgánu (TypOrgan:id_typ_organ), pokud je null či nevyplněno, pak nemá nadřazený typ'),
             'nazev_typ_organ_cz': MItem('string', 'Název typu orgánu v češtině'),
             'nazev_typ_organ_en': MItem('string', 'Název typu orgánu v angličtině'),
-            'typ_organu_obecny': MItem('Int64', 'Obecný typ orgánu, pokud je vyplněný, odpovídá záznamu v TypOrgan:id_typ_organ. Pomocí tohoto sloupce lze najít např. všechny výbory v různých typech zastupitelských sborů.'),
+            'typ_organ_obecny': MItem('Int64', 'Obecný typ orgánu, pokud je vyplněný, odpovídá záznamu v TypOrgan:id_typ_organ. Pomocí tohoto sloupce lze najít např. všechny výbory v různých typech zastupitelských sborů.'),
             'priorita': MItem('Int64', 'Priorita při výpisu')
         }
         _df = pd.read_csv(path, sep="|", names = header.keys(), index_col=False, encoding='cp1250')
-        df = pretypuj(_df, header, name='typ_organu')
-        self.rozsir_meta(header, tabulka='typ_organu', vlastni=False)
-        self.tbl['typ_organu'], self.tbl['_typ_organu'] = df, _df
+        df = pretypuj(_df, header, name='typ_organ')
+        self.rozsir_meta(header, tabulka='typ_organ', vlastni=False)
+        self.tbl['typ_organ'], self.tbl['_typ_organ'] = df, _df
 
 
 class TabulkaOrganyMixin(object):
