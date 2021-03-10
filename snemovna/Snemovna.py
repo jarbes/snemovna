@@ -8,10 +8,37 @@ from datetime import datetime
 from uuid import uuid4
 
 import pandas as pd
+import numpy as np
 
 from snemovna.Helpers import *
 from snemovna.utility import *
 from snemovna.setup_logger import log
+
+
+class SnemovnaMeta(MyDataFrame):
+    def __init__(self, cols=[], defaults={}, dtypes={}, index_name='name'):
+        # Create an empty dataframe with defined columns
+        columns = set(cols + [index_name] + list(defaults.keys()) + list(dtypes.keys()))
+        super().__init__([], columns=columns)
+
+        # Register custom variables that should not mix with the dataframe columns
+        self._metadata = ['_cols', '_defaults', '_dtypes', '_index_name']
+        self._cols, self._defaults, self._dtypes = cols, defaults, dtypes
+        self._index_name = index_name
+
+        # Set index
+        self.set_index(index_name, inplace=True)
+
+    def nastav_hodnotu(self, name, val):
+        unregistered_keys = set(val.keys()) - set(self.columns)
+        if len(unregistered_keys) > 0:
+            raise ValueError(f"Found unregistered keys: {unregistered_keys}. Cannot set metadata!")
+        missing_keys = self._defaults.keys() - val.keys()
+        for k in missing_keys:
+            val[k] = self._defaults[k]
+
+        for k, i in val.items():
+            self.at[name, k] = i
 
 
 class SnemovnaDataFrame(MyDataFrame):
@@ -21,9 +48,9 @@ class SnemovnaDataFrame(MyDataFrame):
     ----------
     df : pandas DataFrame
         základní tabulka dané třídy
-    p : dict
+    paths : dict
         cesty k souborům načtených tabulek
-    t : dict
+    tbl : dict
         načtené tabulky
     meta : třída Meta
         metadata všech dostupných sloupců (napříč načtenými tabulkami)
@@ -32,7 +59,7 @@ class SnemovnaDataFrame(MyDataFrame):
     snemovna : Int64
         objekt obsahujici data aktualni snemovny, defaultně None, hodnota se nastaví až v dětské třídě Orgány
     tzn : pytz formát
-        časová zóna
+          časová zóna
     data_dir : string
         adresář, do kterého se ukládají data
     url : string
@@ -44,12 +71,6 @@ class SnemovnaDataFrame(MyDataFrame):
 
     Methods
     -------
-    nastav_datovy_zdroj(url)
-        Nastaví cesty k souborům s tabulkami
-    missing_files()
-        Určí chybějící datové soubory
-    stahni_data()
-        Stáhne data z archivu PS
     drop_by_inconsistency (df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False)
         Prozkoumá tabulku a oveří konzistenci dat po mergování
     nastav_meta()
@@ -57,52 +78,47 @@ class SnemovnaDataFrame(MyDataFrame):
     rozsir_meta(header, tabulka=None, vlastni=None)
         Rozšíří meta informace k sloupcům dle hlavičky konkrétní tabulky
     """
-    def __init__(self, volebni_obdobi=None, *args, **kwargs):
+    def __init__(self, volebni_obdobi=None, data_dir='./data', *args, **kwargs):
         log.debug("--> SnemovnaDataFrame")
-        super(SnemovnaDataFrame, self).__init__(*args, **kwargs)
+        log.debug(f"Base kwargs: {kwargs}")
+        super().__init__(*args, **kwargs)
         self._metadata = [
-            "df", "meta", 'paths', 'tbl', 'parameters',
+            "meta", 'tbl', 'parameters',
             "volební období", "snemovna", "tzn"
         ]
 
-        self.df = pd.DataFrame()
-        self.meta = Meta(
+        self.meta = SnemovnaMeta(
             index_name='sloupec',
             dtypes=dict(popis='string', tabulka='string', vlastni='bool', aktivni='bool'),
             defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
         )
-        self.paths = {}
         self.tbl = {}
-        self.parameters = {}
         self.volebni_obdobi = volebni_obdobi
         self.snemovna = None
         self.tzn = pytz.timezone('Europe/Prague')
+
+        self.parameters = {}
+        self.parameters['data_dir'] = data_dir
+
         log.debug("<-- SnemovnaDataFrame")
 
-    def nastav_dataframe(self, frame):
-        self.df = frame
-        self.drop(index=self.index, inplace=True)
-        self.drop(columns=self.columns, inplace=True)
-        for col in frame.columns:
-            self[col] = frame[col].astype(frame[col].dtype)
-        self.nastav_meta()
-
-    def pripoj_data(self, o, jmeno=''):
-        for key in o.paths:
-            self.paths[key] = o.paths[key]
-        for key in o.tbl:
-            self.tbl[key] = o.tbl[key]
-        for key in o.meta:
-            row = o.meta.data.loc[key].to_dict()
+    def pripoj_data(self, obj, jmeno=''):
+        for key in obj.paths:
+            self.paths[key] = obj.paths[key]
+        for key in obj.tbl:
+            self.tbl[key] = obj.tbl[key]
+        for key in obj.meta:
+            row = obj.meta.data.loc[key].to_dict()
             if row['tabulka'] == 'df':
                 row['tabulka'] = jmeno + '_df'
             self.meta[key] = row
+        return obj
 
     def popis(self):
-        popis_tabulku(self.df, self.meta, schovej=['aktivni'])
+        popis_tabulku(self, self.meta, schovej=['aktivni', 'sloupec'])
 
     def popis_sloupec(self, sloupec):
-        popis_sloupec(self.df, sloupec)
+        popis_sloupec(self, sloupec)
 
     def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False):
         inconsistency = {}
@@ -136,67 +152,63 @@ class SnemovnaDataFrame(MyDataFrame):
 
         return ret
 
-    def nastav_meta(self):
-        for c in self.meta:
-            if c not in self.df.columns:
-                self.meta[c] = {"aktivni": False}
-            else:
-                self.meta[c] = {"aktivni": True}
+    def nastav_dataframe(self, frame, odstran=[], vyber=[]):
+        ordered_cols = list(vyber) + list(frame.columns)
+        ordered_cols = [x for x in ordered_cols if x in frame.columns]
+        ordered_cols =  list(dict.fromkeys(ordered_cols))
 
-        for c in self.df.columns:
-            if c not in self.meta:
-                log.warning(f"Pro sloupec '{c}' nebyla nalezena metadata!")
+        # recreate the frame with ordered and selected columns
+        self.drop(index=self.index, columns=self.columns, inplace=True)
+        for col in ordered_cols:
+            if col not in odstran:
+                self[col] = frame[col].astype(frame[col].dtype)
+
+        self.nastav_meta(odstran=odstran, vyber=vyber)
+
+    def nastav_meta(self, odstran=[], vyber=[]):
+        m = self.meta.copy()
+        for key in m.index:
+            if key in odstran:
+                m.loc[key, 'aktivni'] = False
+            elif key not in self.columns:
+                m.loc[key, 'aktivni'] = False
+            else:
+                m.loc[key, 'aktivni'] = True
+
+        for key in self.columns:
+            if key not in m.index:
+                log.warning(f"Pro sloupec '{key}' nebyla nalezena metadata!")
+
+        ordered_idx = list(vyber) + list(m.index)
+        ordered_idx = [x for x in ordered_idx if x in m.index]
+        ordered_idx =  list(dict.fromkeys(ordered_idx))
+        m = m.reindex(index=ordered_idx)
+
+        self.meta.drop(index=self.meta.index, columns=self.meta.columns, inplace=True)
+        for col in m.columns:
+            self.meta[col] = m[col]
 
     def rozsir_meta(self, header, tabulka=None, vlastni=None):
-        for k, i in header.items():
-            self.meta[k] = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
-
+        for key, i in header.items():
+            val_dict = dict(popis=i.popis, tabulka=tabulka, vlastni=vlastni)
+            self.meta.nastav_hodnotu(key, val_dict)
 
 class SnemovnaZipDataMixin(object):
+    def stahni_zip_data(self, nazev):
+        url_prefix = "https://www.psp.cz/eknih/cdrom/opendata/"
+        url = url_prefix + nazev + '.zip'
+        data_dir = self.parameters['data_dir']
 
-    def __init__(self, url, data_dir='./data/', stahni=True, stamp=None, *args, **kwargs):
-        log.debug("--> SnemovnaZipDataMixin")
-        super(SnemovnaZipDataMixin, self).__init__(*args, **kwargs)
-        self.parameters['url'] = url
-        self.parameters['data_dir'] = data_dir
-        self.parameters['stahni'] = stahni
-
-        to_download = False
-        if stamp == None:
-            self.parameters['stamp'] = datetime.now().strftime('%Y%m-%d%H-%M%S-') + str(uuid4())
-            to_download=True
-        else:
-            self.parameters['stamp'] = stamp
-
-        self.nastav_cesty(self.parameters['url'])
-
-        if (to_download == True) and (stahni == True) and (os.path.isfile(self.parameters['zip_path']) == False):
-            mf = self.missing_files()
-            log.debug(f"Počet chybějících souborů: {len(mf)}, stahni: {stahni}")
-            if (len(mf) > 0) or (stahni == True):
-                if (self.parameters['url'] is not None) \
-                    and (self.parameters['zip_path'] is not None) \
-                    and (self.parameters['data_dir'] is not None):
-                    download_and_unzip(self.parameters['url'], self.parameters['zip_path'], self.parameters['data_dir'])
-                    os.remove(self.parameters['zip_path'])
-                else:
-                    log.error("Chyba: cesty pro stahování nebyly správně nastaveny!")
-
-        log.debug("<-- SnemovnaZipDataMixin")
-
-    def nastav_cesty(self, url):
         a = urlparse(url)
         filename = os.path.basename(a.path)
-        base, extension = os.path.splitext(filename)
-        self.parameters['url'] = url
-        self.parameters['zip_path'] = f"{self.parameters['data_dir']}/{base}-{self.parameters['stamp']}{extension}"
-        log.debug(f"SnemovnaTest: Nastavuji cestu k zip souboru na: {self.parameters['zip_path']}")
+        zip_path = f"{data_dir}/{filename}"
+        log.debug(f"SnemovnaZipDataMixin: Nastavuji cestu k zip souboru na: {zip_path}")
 
-    def missing_files(self):
-        missing_files = []
-        paths_flat = sum([item if isinstance(item, list) else [item] for item in self.paths.values()], [])
-        for p in paths_flat:
-            if path.isfile(p) is not True:
-                missing_files.append(p)
-        log.debug(f"Počet chybějících souborů: {len(missing_files)}")
-        return missing_files
+        # smaz starý zip soubor, pokud existuje
+        if os.path.isfile(zip_path):
+            os.remove(zip_path)
+
+        download_and_unzip(url, zip_path, data_dir)
+
+
+

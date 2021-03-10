@@ -36,12 +36,19 @@ def download_and_unzip(url, zip_file_name, data_dir):
 #######################################################################
 # Popis dat v pandas tabulkách
 
-def popis_tabulku(df, meta=None, schovej=[]):
+def popis_tabulku(frame, meta=None, schovej=[]):
     """
     Popiš vlastnosti tabulky
     """
+    df = frame.select_dtypes(exclude=['object'])
+
     print(f"Počet řádků v tabulce: {df.index.size}")
     print()
+
+    neanalyzovane = list(set(frame.columns) - set(df.columns))
+    if len(neanalyzovane) > 0:
+        print(f"Nenalyzované sloupce: {neanalyzovane}")
+        print()
 
     uniq = df.nunique()
     is_null = df.isnull().sum()
@@ -51,11 +58,11 @@ def popis_tabulku(df, meta=None, schovej=[]):
         "počet unikátních hodnot": uniq.values,
         "počet nenulových hodnot": not_null.values,
         "typ": df.dtypes.astype(str)
-    }).set_index('sloupec').sort_values(by="počet unikátních hodnot", ascending=False)
+    })#.set_index('sloupec')#sort_values(by="počet unikátních hodnot", ascending=False)
 
-    if meta != None:
-        for column in meta.data:
-            out[column] = meta.data[column]
+    if isinstance(meta, pd.DataFrame):
+        for column in meta:
+            out[column] = meta[column]
 
     sloupce_s_jedinou_hodnotou = out[out["počet unikátních hodnot"] == 1]
     if len(sloupce_s_jedinou_hodnotou) == 0:
@@ -120,16 +127,15 @@ def pretypuj(df, header, name=None, inplace=False):
         new_df = df.copy()
 
     if name is not None:
-        log.debug(f"Přetypování v tabulce '{name}':")
+        log.debug(f"Přetypování v tabulce '{name}'.")
     for col in df.columns:
         if col in header:
-            log.debug(f"Přetypovávám sloupec: '{col}'.")
+            #log.debug(f"Přetypovávám sloupec: '{col}'.")
             if isinstance(header[col], str):
                 new_df[col] = df[col].astype(header[col])
             elif isinstance(header[col], MItem):
                 new_df[col] = df[col].astype(header[col].typ)
             else:
-                log.error(type(header[col]))
                 log.error(f"Chyba: Neznámý formát přetypování. Sloupec '{col}' nebylo možné přetypovat.")
     return new_df
 

@@ -27,7 +27,7 @@ class MyDataFrame(pd.DataFrame):
     _metadata = []
 
     def __init__(self, *args, **kwargs):
-        super(MyDataFrame, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def _constructor(self):
@@ -42,6 +42,7 @@ class MyDataFrame(pd.DataFrame):
 # Pomocné struktury pro asociovaná metadata k sloupcům tabulek
 
 MItem = namedtuple('MItem', ("typ", "popis"))
+
 
 class Meta(object):
     def __init__(self, columns=[], defaults={}, dtypes={}, index_name='name'):
@@ -67,13 +68,16 @@ class Meta(object):
     def __setitem__(self, name, val):
         found = self.data[self.data.index.isin([name])]
         if len(found) > 0:
+            # insert
             for k, i in val.items():
                 self.data.loc[self.data.index == name, k] = i
         else:
+            # update
             missing_keys = self.defaults.keys() - val.keys()
             for k in missing_keys:
                 val[k] = self.defaults[k]
             self.data = self.data.append(pd.Series(val.values(), index=val.keys(), name=name))
+            #self.data = self.data.update(pd.Series(val.values(), index=val.keys(), name=name))
 
     def __contains__(self, name):
         found = self.data[self.data.index.isin([name])]
