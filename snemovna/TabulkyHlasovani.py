@@ -18,6 +18,7 @@ class TabulkaHlasovaniMixin(object):
     def nacti_hlasovani(self):
         # Souhrnné informace o hlasování
         path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}s.unl"
+        self.paths['hlasovani'] = path
         header = {
             'id_hlasovani': MItem('Int64', 'Identifikátor hlasování'),
             'id_organ': MItem('Int64', 'Identifikátor orgánu, viz Organy:id_organ'),
@@ -75,6 +76,7 @@ class TabulkaZmatecneHlasovaniMixin(object):
     def nacti_zmatecne_hlasovani(self):
         # Hlasování, která byla prohlášena za zmatečné, tj. na jejich výsledek nebyl brán zřetel
         path = f"{self.parameters['data_dir']}/zmatecne.unl"
+        self.paths['zmatecne_hlasovani'] = path
         header = {
             "id_hlasovani": MItem("Int64", 'Identifikátor hlasování.')
         }
@@ -88,6 +90,7 @@ class TabulkaZpochybneniHlasovaniMixin(object):
     # Načti tabulku zpochybneni hlasovani (hl_check)
     def nacti_zpochybneni_hlasovani(self):
         path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}z.unl"
+        self.paths['zpochybneni_hlasovani'] = path
         header = {
             "id_hlasovani": MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani.'),
             "turn": MItem('Int64', 'Číslo stenozáznamu, ve kterém je první zmínka o zpochybnění hlasování.'),
@@ -102,7 +105,7 @@ class TabulkaZpochybneniHlasovaniMixin(object):
 
         # 0 - žádost o opakování hlasování - v tomto případě se o této žádosti neprodleně hlasuje a teprve je-li tato žádost přijata, je hlasování opakováno;
         # 1 - pouze sdělení pro stenozáznam, není požadováno opakování hlasování.
-        maska = {0: "žádost o opakování hlasování", 1: "pouze sdělení pro stenozáznam"}
+        maska = {0: "žádost o opakování", 1: "pouze pro stenozáznam"}
         df["mode__KAT"] = mask_by_values(df["mode"], maska).astype('string')
         self.meta.nastav_hodnotu('mode__KAT', dict(popis='Typ zpochybnění', tabulka='zpochybneni', vlastni=True))
         self.tbl['zpochybneni'], self.tbl['_zpochybneni'] = df, _df
@@ -111,6 +114,7 @@ class TabulkaHlasovaniVazbaStenozaznamMixin(object):
     def nacti_hlasovani_vazba_stenozaznam(self):
         ''' Načte tabulku vazeb hlasovani na stenozaznam.'''
         path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}v.unl"
+        self.paths['hlasovani_vazba_stenozaznam'] = path
         header = {
             "id_hlasovani": MItem('Int64', 'Identifikátor hlasování, viz hl_hlasovani:id_hlasovani'),
             "turn": MItem('Int64', 'Číslo stenozáznamu'),
@@ -132,6 +136,7 @@ class TabulkaZpochybneniPoslancemMixin(object):
     def nacti_zpochybneni_poslancem(self):
         # Poslanci, kteří oznámili zpochybnění hlasování
         path = f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}x.unl"
+        self.paths['zpochybneni_poslancem'] = path
         header = {
             "id_hlasovani": MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani a ZpochybneniPoslancem:id_hlasovani, které bylo zpochybněno.'),
             "id_osoba": MItem('Int64', 'Identifikátor poslance, který zpochybnil hlasování; viz Osoby:id_osoba.'),
@@ -144,7 +149,6 @@ class TabulkaZpochybneniPoslancemMixin(object):
         self.tbl['zpochybneni_poslancem'], self.tbl['_zpochybneni_poslancem'] = df, _df
 
 
-
 class TabulkaOmluvyMixin(object):
     def nacti_omluvy(self):
         # Tabulka zaznamenává časové ohraničení omluv poslanců z jednání Poslanecké sněmovny.
@@ -152,9 +156,10 @@ class TabulkaOmluvyMixin(object):
         # Data z tabulky se použijí pouze k nahrazení výsledku typu '@', tj. pokud výsledek hlasování jednotlivého poslance je nepřihlášen, pak pokud zároveň čas hlasování spadá do časového intervalu omluvy, pak se za výsledek považuje 'M', tj. omluven.
         #Pokud je poslanec omluven a zároveň je přihlášen, pak výsledek jeho hlasování má přednost před omluvou.
         path = f"{self.parameters['data_dir']}/omluvy.unl"
+        self.paths['omluvy'] = path
         header = {
             "id_organ": MItem('Int64', 'Identifikátor volebního období, viz Organy:id_organ'),
-            "id_poslanec": MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
+            "id_poslanec": MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'), # Pozor: v tabulce jsou i omluvy z období, kdy už osoba není poslancem
             "den__ORIG": MItem('string', 'Datum omluvy'),
             "od__ORIG": MItem('string', 'Čas začátku omluvy, pokud je null, pak i omluvy:do je null a jedná se o omluvu na celý jednací den.'),
             "do__ORIG": MItem('string', 'Čas konce omluvy, pokud je null, pak i omluvy:od je null a jedná se o omluvu na celý jednací den.')
@@ -162,6 +167,7 @@ class TabulkaOmluvyMixin(object):
 
         _df = pd.read_csv(path, sep="|", names = header,  index_col=False, encoding='cp1250')
         df = pretypuj(_df, header, 'omluvy')
+        df.drop_duplicates(keep='first', inplace=True)
         self.rozsir_meta(header, tabulka='omluvy', vlastni=False)
 
         df['od'] = format_to_datetime_and_report_skips(df, 'od__ORIG', to_format='%H:%M').dt.tz_localize(self.tzn).dt.time
@@ -180,10 +186,11 @@ class TabulkaOmluvyMixin(object):
 
 
 
-class TabulkaHlasovaniPoslanceMixin(object):
-    def nacti_hlasovani_poslance(self):
+class TabulkaHlasovaniPoslanciMixin(object):
+    def nacti_hlasovani_poslanci(self):
         # V souborech uložena jako hlXXXXhN.unl, kde XXXX je reference volebního období a N je číslo části. V 6. a 7. volebním období obsahuje část č. 1 hlasování 1. až 50. schůze, část č. 2 hlasování od 51. schůze.
         paths = glob(f"{self.parameters['data_dir']}/hl{self.volebni_obdobi}h*.unl")
+        self.paths['hlasovani_poslanci'] = paths
         header = {
             'id_poslanec': MItem('Int64', 'Identifikátor poslance, viz Poslanci:id_poslanec'),
             'id_hlasovani': MItem('Int64', 'Identifikátor hlasování, viz Hlasovani:id_hlasovani'),

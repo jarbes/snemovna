@@ -36,7 +36,10 @@ class Schuze(TabulkaSchuzeMixin, TabulkaSchuzeStavMixin, SchuzeBase):
         self.tbl['schuze'] = pd.merge(left=self.tbl['schuze'], right=self.tbl['schuze_stav'], on='id_schuze', suffixes = ("", suffix), how='left')
         self.drop_by_inconsistency(self.tbl['schuze'], suffix, 0.1, 'schuze', 'schuze_stav', inplace=True)
 
-        self.nastav_dataframe(self.tbl['schuze'])
+        self.nastav_dataframe(
+            self.tbl['schuze'],
+            odstran=['pozvanka__ORIG', 'stav__ORIG', 'typ__ORIG']
+        )
 
         log.debug('<-- Schuze')
 

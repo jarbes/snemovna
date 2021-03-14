@@ -44,8 +44,8 @@ class TabulkaSchuzeMixin(object):
         df['do_schuze'] = df['do_schuze'].dt.tz_localize(self.tzn)
 
         mask = {None: 'schválený pořad', 1: 'navržený pořad'}
-        df['pozvanka'] = mask_by_values(df.pozvanka__ORIG, mask)
-        self.meta.nastav_hodnotu('pozvanka', dict(popis='Druh záznamu.', tabulka='schuze', vlastni=True))
+        df['pozvanka'] = mask_by_values(df.pozvanka__ORIG, mask).astype('string')
+        self.meta.nastav_hodnotu('pozvanka', dict(popis='Druh záznamu: [schválený pořad; navržený pořad].', tabulka='schuze', vlastni=True))
 
         self.tbl['schuze'], self.tbl['_schuze'] = df, _df
 
@@ -65,13 +65,13 @@ class TabulkaSchuzeStavMixin(object):
         df = pretypuj(_df, header, 'schuze_stav')
         self.rozsir_meta(header, tabulka='schuze_stav', vlastni=False)
 
-        assert df.id_schuze.size == df.id_schuze.nunique(), "Schůze může mít určen pouze jeden stav!"
+        mask = {1:"OK", 2:"pořad neschválen, schůze ukončena"}
+        df['stav'] = mask_by_values(df.stav__ORIG, mask).astype('string')
+        self.meta.nastav_hodnotu('stav', dict(popis='Stav schůze: [OK; pořad schůze nebyl schválen a schůze byla ukončena].', tabulka='schuze_stav', vlastni=True))
 
-        df['stav'] = df.stav__ORIG.astype(str).mask(df.stav__ORIG == 1, "OK").mask(df.stav__ORIG == 2, "pořad neschválen, schůze ukončena")
-        self.meta.nastav_hodnotu('stav', dict(popis='Stav schůze.', tabulka='schuze_stav', vlastni=True))
-
-        df['typ'] = df.typ__ORIG.astype(str).mask(df.typ__ORIG == 1, "řádná").mask(df.typ__ORIG == 2, "mimořádná")
-        self.meta.nastav_hodnotu('typ', dict(popis='Typ schůze.', tabulka='schuze_stav', vlastni=True))
+        mask = {1: "řádná", 2: "mimořádná"}
+        df['typ'] = mask_by_values(df.typ__ORIG, mask).astype('string')
+        self.meta.nastav_hodnotu('typ', dict(popis='Typ schůze. Typ schůze: [řádná; mimořádná (navržená skupinou poslanců)]. Dle jednacího řádu nelze měnit navržený pořad mimořádné schůze.', tabulka='schuze_stav', vlastni=True))
 
         self.tbl['schuze_stav'], self.tbl['_schuze_stav'] = df, _df
 

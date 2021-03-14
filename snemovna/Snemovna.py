@@ -83,7 +83,7 @@ class SnemovnaDataFrame(MyDataFrame):
         log.debug(f"Base kwargs: {kwargs}")
         super().__init__(*args, **kwargs)
         self._metadata = [
-            "meta", 'tbl', 'parameters',
+            "meta", 'tbl', 'parameters', 'paths',
             "volební období", "snemovna", "tzn"
         ]
 
@@ -93,6 +93,7 @@ class SnemovnaDataFrame(MyDataFrame):
             defaults=dict(popis=None, tabulka=None, vlastni=None, aktivni=None),
         )
         self.tbl = {}
+        self.paths = {}
         self.volebni_obdobi = volebni_obdobi
         self.snemovna = None
         self.tzn = pytz.timezone('Europe/Prague')
@@ -120,7 +121,7 @@ class SnemovnaDataFrame(MyDataFrame):
     def popis_sloupec(self, sloupec):
         popis_sloupec(self, sloupec)
 
-    def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False):
+    def drop_by_inconsistency (self, df, suffix, threshold, t1_name=None, t2_name=None, t1_on=None, t2_on=None, inplace=False, silent=False):
         inconsistency = {}
         abundance = []
 
@@ -132,17 +133,20 @@ class SnemovnaDataFrame(MyDataFrame):
             if len(difference) > 0:
               inconsistency[short_col] = float(len(difference))/len(df)
               on = f", left_on={t1_on} right_on={t2_on}" if ((t1_on != None) and (t2_on != None)) else ''
-              log.warning(f"While merging '{t1_name}' with '{t2_name}'{on}: Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}. Inconsistency ratio: {inconsistency[short_col]:.4f}. Example of inconsistency: '{difference.iloc[0][short_col]}' (i.e. {short_col}@{difference.index[0]}) != '{difference.iloc[0][col]}' (i.e. {col}@{difference.index[0]})")
+              if not silent:
+                  log.warning(f"While merging '{t1_name}' with '{t2_name}'{on}: Columns '{short_col}' and '{col}' differ in {len (difference)} values from {len(df)}. Inconsistency ratio: {inconsistency[short_col]:.4f}. Example of inconsistency: '{difference.iloc[0][short_col]}' (i.e. {short_col}@{difference.index[0]}) != '{difference.iloc[0][col]}' (i.e. {col}@{difference.index[0]})")
             else:
               abundance.append(short_col)
 
         to_drop = [col for (col, i) in inconsistency.items() if i >= threshold]
         if len(to_drop) > 0:
-            log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_drop} because of big inconsistency.")
+            if not silent:
+                log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_drop} because of big inconsistency.")
 
         to_skip = [col + suffix for col in set(inconsistency.keys()).union(abundance)]
         if len(to_skip) > 0:
-          log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_skip} because of abundance.")
+            if not silent:
+                log.warning(f"While merging '{t1_name}' with '{t2_name}': Dropping {to_skip} because of abundance.")
 
         if inplace == True:
             df.drop(columns=set(to_drop).union(to_skip), inplace=True)

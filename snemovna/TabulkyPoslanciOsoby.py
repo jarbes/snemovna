@@ -170,7 +170,10 @@ class TabulkaZarazeniOsobyMixin(object):
 
         df['od_o'] = format_to_datetime_and_report_skips(df, 'od_o', '%Y-%m-%d %H').dt.tz_localize(self.tzn)
         # Fix known errors
-        #df['do_o'] = df.do_o.mask(df.do_o == '0205-06-09 00',  '2005-06-09 00')
+        ids = df[(df.do_o == '0205-06-09 00') & (df.id_osoba == 349) & (df.id_of == 853)].index
+        #print(ids)
+        df.at[ids, 'do_o']  = '2005-06-09 00'
+
         df['do_o'] = format_to_datetime_and_report_skips(df, 'do_o', '%Y-%m-%d %H').dt.tz_localize(self.tzn)
         df['od_f'] = format_to_datetime_and_report_skips(df, 'od_f', '%d.%m.%Y').dt.tz_localize(self.tzn)
         df['do_f'] = format_to_datetime_and_report_skips(df, 'do_f', '%d.%m.%Y').dt.tz_localize(self.tzn)

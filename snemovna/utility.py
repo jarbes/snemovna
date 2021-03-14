@@ -94,15 +94,19 @@ def popis_nulove_hodnoty(df):
         return
 
     for col in col_with_nans:
-        cnt = len(df[df[col].isna() == True])
-        print(f"Sloupec '{col}' obsahuje {100*cnt/len(df):.2f}% ({cnt} z {len(df)}) nulových hodnot (např. NaNů).")
+      cnt = len(df[df[col].isna() == True])
+      print(f"Sloupec '{col}' obsahuje {100*cnt/len(df):.2f}% ({cnt} z {len(df)}) nulových hodnot (např. NaNů).")
 
 def popis_sloupec(df, column):
     print(f"Typ: {df[column].dtype}")
     print(f"Počet hodnot: {df[column].count()}")
     print(f"Počet unikátních hodnot: {df[column].nunique()}")
-    print(f"První hodnota: {df.iloc[0][column]}")
-    print(f"Poslední hodnota: {df.iloc[-1][column]}")
+
+    print()
+    print("Seznam hodnot")
+    print("--------------")
+    for hodnota, pocet in df[column].value_counts().to_dict().items():
+        print(f"{hodnota}: {pocet}")
 
 def cetnost_opakovani_dle_sloupce(df, column, printout=False):
     """
