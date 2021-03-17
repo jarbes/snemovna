@@ -27,7 +27,7 @@ from snemovna.setup_logger import log
 # Texty se stahují z internetových stránek PS, viz. např. https://www.psp.cz/eknih/2017ps/stenprot/001schuz/s001001.htm
 
 
-class StenoTexty(TabulkaStenotextyMixin, StenoRecnici, Steno, ZarazeniOsoby, Organy, Osoby, SnemovnaDataFrame):
+class Stenotexty(TabulkaStenotextyMixin, StenoRecnici, Steno, ZarazeniOsoby, Organy, Osoby, SnemovnaDataFrame):
 
     def __init__(self, stahni=True, limit=-1, soubezne_stahovani_max=12, soubezne_zpracovani_max=-1, *args, **kwargs):
         log.debug('--> StenoTexty')

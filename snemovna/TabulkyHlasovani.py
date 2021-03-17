@@ -108,6 +108,27 @@ class TabulkaZpochybneniHlasovaniMixin(object):
         maska = {0: "žádost o opakování", 1: "pouze pro stenozáznam"}
         df["mode__KAT"] = mask_by_values(df["mode"], maska).astype('string')
         self.meta.nastav_hodnotu('mode__KAT', dict(popis='Typ zpochybnění', tabulka='zpochybneni', vlastni=True))
+
+        # V tabulce ZpochybneniHlasovani mohou být nekonzistence a duplicity.
+        # Pomocí indikátoru 'je_platne' se je pokusíme označit.
+        # Jedná se o naši interpretaci dat, která může být mylná.
+        platne_zh = df[
+            (df.mode__KAT == 'pouze pro stenozáznam') |
+            ((df.mode__KAT == 'žádost o opakování') & ~df.id_h2.isna())
+        ].sort_values(
+            by=['mode__KAT'],
+            key= lambda col: sort_column_by_predefined_order(col, ['pouze pro stenozáznam', 'žádost o opakování'], how='tail')
+        ).groupby('id_hlasovani').tail(1).sort_index()
+
+        df['je_platne'] = df.index.isin(platne_zh.index)
+        self.meta.nastav_hodnotu("Indikátor platného zpochybnění. Za platné zpochybnění určitého hlasování "
+                "považujeme takové, které je v tabulce uvedené později, "
+                "a 'mode__KAT' je buď s příznakem 'pouze pro stenozáznam', "
+                "nebo má příznak 'žádost o opakování', "
+                "přičemž o opakování hlasování se hlasovalo (viz ZpochybneniHlasovani:id_h2)",
+            dict(popis='Indikátor existence stenozáznamu', tabulka='zpochybneni', vlastni=True))
+
+
         self.tbl['zpochybneni'], self.tbl['_zpochybneni'] = df, _df
 
 class TabulkaHlasovaniVazbaStenozaznamMixin(object):

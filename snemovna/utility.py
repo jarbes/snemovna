@@ -122,7 +122,7 @@ def cetnost_opakovani_dle_sloupce(df, column, printout=False):
 
 
 #######################################################################
-# Čištění dat v pandas tabulkách
+# Čištění  a úprava dat v pandas tabulkách
 
 def pretypuj(df, header, name=None, inplace=False):
     if inplace:
@@ -177,6 +177,19 @@ def format_to_datetime_and_report_skips(df, col, to_format):
 
     return new_srs
 
+def sort_column_by_predefined_order(column, ordered_list, how='head'):
+    """Sort function"""
+    if how == 'head':
+        ordered_options = ordered_list + list(set(column.unique()) - set(ordered_list))
+    elif how == 'tail':
+        ordered_options = list(set(column.unique()) - set(ordered_list)) + ordered_list
+    else:
+        raise(ValueError(f"Špatný parametr: {how}"))
+
+    correspondence = {t: o for o, t in enumerate(ordered_options)}
+    return column.map(correspondence)
+
+
 #######################################################################
 # Zobrazování dat v pandas tabulkách
 
@@ -220,3 +233,9 @@ def expand_hierarchy(df, id_field, parent_field, to_expand):
     else:
         return to_expand
 
+
+#######################################################################
+# Obecné utility
+
+def flatten(ary):
+    return [x for l in ary for x in l]

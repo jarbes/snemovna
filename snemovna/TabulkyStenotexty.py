@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from joblib import Parallel, delayed, cpu_count
 
 from snemovna.Helpers import MItem
-from snemovna.utility import pretypuj
+from snemovna.utility import pretypuj, flatten
 
 from snemovna.setup_logger import log
 
@@ -36,11 +36,13 @@ class TabulkaStenotextyMixin(object):
             'je_poznamka': MItem('bool', 'Příznak, že celá promluva je poznámka.'),
             'cas': MItem('string', "Čas extrahovaný ze stenozáznamu."),
             'typ_casu': MItem('string', 'Typ času extrahovaného ze stenozáznamu [začátek, přerušení pokračování, ukončení, obecný].'),
-            "date": MItem('string', 'Datum extrahované ze stenozáznamu.')
+            "date": MItem('string', 'Datum extrahované ze stenozáznamu.'),
+            'hlasovani': MItem('Int64', 'Identifikátor hlasování (pole).'),
+            'cislo_hlasovani': MItem('Int64', 'Číslo hlasování (pole).'),
         }
         path = f"{self.parameters['data_dir']}/steno_texty-{self.volebni_obdobi}.pkl"
         df = pd.read_pickle(path)
-        self.rozsir_meta(header, tabulka='steno_testy', vlastni=False)
+        self.rozsir_meta(header, tabulka='steno_texty', vlastni=False)
 
         self.tbl['steno_texty'], self.tbl['_steno_texty'] = df, df
 
@@ -67,6 +69,8 @@ class TabulkaStenotextyMixin(object):
         cas = []
         typ_casu = []
         dates = []
+        hlasovani = []
+        cisla_hlasovani = []
         for result, arg in zip(results,  args):
             for r in result:
                 id_osoba, id_rec = None, None
@@ -106,8 +110,10 @@ class TabulkaStenotextyMixin(object):
                 cas.append(c)
                 typ_casu.append(tc)
                 dates.append(r['meta']['date'])
+                hlasovani.append(r['meta']['hlasovani'])
+                cisla_hlasovani.append(r['meta']['cislo_hlasovani'])
 
-        df = pd.DataFrame({'text': texty, 'text_s_poznamkami': texty_s_poznamkami, 'schuze': schuze, 'turn': turns, 'id_osoba': id_osoby, "id_rec": id_reci, 'poznamka': poznamky, 'je_poznamka': je_poznamka, 'cas': cas, 'typ_casu': typ_casu, "date": dates})
+        df = pd.DataFrame({'text': texty, 'text_s_poznamkami': texty_s_poznamkami, 'schuze': schuze, 'turn': turns, 'id_osoba': id_osoby, "id_rec": id_reci, 'poznamka': poznamky, 'je_poznamka': je_poznamka, 'cas': cas, 'typ_casu': typ_casu, "date": dates, 'hlasovani': hlasovani, 'cisla_hlasovani': cisla_hlasovani})
 
         return df
 
@@ -165,22 +171,11 @@ class TabulkaStenotextyMixin(object):
         data = open(filename, 'r', encoding='cp1250').read()
         return BeautifulSoup(data, 'html5lib') # Další varianty: 'lxml', 'html.parser'
 
-    def flatten(self, ary):
-        return [item for sublist in ary for item in sublist]
-
     def polish(self, text):
         text = text.strip()
         text = re.sub(r'\n', ' ', text)
         text = re.sub(r'[ ]+', r' ', text)
         return text
-
-    #def formatuj_cas(self, H, M):
-    #    try:
-    #        ret = pd.to_datetime(f"{H}:{M}", format="%H:%M").time()
-    #        return ret
-    #    except ValueError as e:
-    #        log.error("Value Error: Zachycena chyba. H='{H}', M='{M}'!")
-    #        return pd.NaT
 
     # * (poznámka) **
     def je_poznamka(self, tag):
@@ -256,6 +251,8 @@ class TabulkaStenotextyMixin(object):
 
     def rozloz_tag(self, tag, text, meta):
         for child in tag.contents:
+            if (child == None) or (child.string == None):
+                continue
             for fce, klic in [
                 [self.najdi_cas, 'cas'],
                 [self.najdi_recnika, 'recnici'],
@@ -266,6 +263,11 @@ class TabulkaStenotextyMixin(object):
             ]:
                 ret = fce(child)
                 if ret:
+                    if (klic == 'hlasovani') and len(ret) > 0:
+                        hid, G = ret
+                        meta['cislo_hlasovani'].append(hid)
+                        meta['hlasovani'].append(G)
+                        continue
                     meta[klic].append(ret)
 
                 # Promluvy jsou uvozeny jmény řečníků, která je nutné odstranit.
@@ -276,7 +278,7 @@ class TabulkaStenotextyMixin(object):
 
                 # V jedné promluvě může být víc poznámek
                 if (klic == 'poznamky') and (len(meta['poznamky']) > 0):
-                    meta['poznamky'] = self.flatten(meta['poznamky'])
+                    meta['poznamky'] = flatten(meta['poznamky'])
 
             if type(child) == NavigableString:
                 t = html2text(child.string)
@@ -286,7 +288,7 @@ class TabulkaStenotextyMixin(object):
         return
 
     def rozloz_paragraf(self, tag):
-        meta = {"recnici": [], "hlasovani": [], "tisky": [], "poznamky": [], "je_poznamka": [], "cas": [], "odstran": [], "text_bez_poznamek": None}
+        meta = {"recnici": [], "hlasovani": [], 'cislo_hlasovani': [], "tisky": [], "poznamky": [], "je_poznamka": [], "cas": [], "odstran": [], "text_bez_poznamek": None}
         lines = []
 
         if tag is None:
@@ -304,6 +306,9 @@ class TabulkaStenotextyMixin(object):
 
         meta['text_s_poznamkami'] = text
         text = re.sub(r"\((.*?)\)", '', text)
+
+        meta['cislo_hlasovani'] = None if len(meta['cislo_hlasovani']) == 0 else meta['cislo_hlasovani'][0]
+        meta['hlasovani'] = None if len(meta['hlasovani']) == 0 else meta['hlasovani'][0]
 
         return {"text": text, "meta": meta}
 
@@ -352,7 +357,7 @@ class TabulkaStenotextyMixin(object):
         body = soup.find("div", id='body')
 
         if not body:
-            log.error(f"V souboru '{filename}' neobsahuje tag 'body', přeskakuji.")
+            log.error(f"V souboru '{filename}' chybí tag 'body', přeskakuji.")
             return None
 
         date = self.parse_date(self.get_date(body))
@@ -363,7 +368,7 @@ class TabulkaStenotextyMixin(object):
         last_recnik = None
 
         rows = []
-        for p in body.find_all('p', align='justify'):
+        for p in body.find_all('p', align=['justify']): # TODO: některé časové údaje jsou s align: center
             row = self.rozloz_paragraf(p)
             row['meta']['date'] = pd.to_datetime(date, format="%Y-%m-%d")
             row['meta']['date'] = row['meta']['date']
