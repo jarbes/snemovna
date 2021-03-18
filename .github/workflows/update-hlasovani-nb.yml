@@ -10,9 +10,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Create venv and install requirements
-        run: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+        run: python3 -m venv venv && source venv/bin/activate && pip install wheel && pip install -r requirements.txt
       - name: Run Hlasovani
-        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.ipynb
+        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.ipynb --output Hlasovani.output.ipynb && ls
     #- uses: actions/upload-artifact@master
     #  if: always()
     #  with:
