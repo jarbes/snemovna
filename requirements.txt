@@ -4,10 +4,11 @@ html2text
 html5lib
 #jupyterlab
 matplotlib
-numpy
+numpy>=1.18.4
 pandas
 plotly
 requests
+joblib
 #scikit-learn==0.23.1
 #scipy==1.4.1
 #sklearn==0.0
