@@ -1,4 +1,4 @@
-name: jupyter-actions
+name: snemovna
 channels:
     - conda-forge
 dependencies:
