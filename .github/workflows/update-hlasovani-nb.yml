@@ -6,23 +6,20 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: Set up Python
-      uses: actions/setup-python@v1
-    - uses: yaananth/run-notebook@v1
-      env:
-        RUNNER: ${{ toJson(runner) }}
-        SECRETS: ${{ toJson(secrets) }}
-        GITHUB: ${{ toJson(github) }}
+    - uses: actions/checkout@v2
+    - name: Run Hlasovani
+      uses: Hybrid-Performance-Method/hybrid-interval@v1
       with:
-        notebook: "Hlasovani.ipynb"
-        params: "Hlasovani.json"
-        isReport: True
-        poll: True
-    - uses: actions/upload-artifact@master
-      if: always()
-      with:
-        name: output
-        path: ${{ RUNNER.temp }}/nb-runner
-      env:
-        RUNNER: ${{ toJson(runner) }}
+        notebook: Hlasovani.ipynb
+        #output: s3://notebooks/output.ipynb
+        hasDate: "false"
+        #parameters: parameters.yml
+        #requirements: "package1==1.0.0 package2==1.1.0"
+        #secret: ${{ secret.MY_SECRETS }}
+    #- uses: actions/upload-artifact@master
+    #  if: always()
+    #  with:
+    #    name: output
+    #    path: ${{ RUNNER.temp }}/nb-runner
+    #  env:
+    #    RUNNER: ${{ toJson(runner) }}
