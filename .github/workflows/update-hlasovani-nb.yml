@@ -24,9 +24,7 @@ jobs:
       - name: Create venv and install requirements
         run: python3 -m venv venv && source venv/bin/activate && pip install wheel && pip install -r requirements.txt
       - name: Run Hlasovani
-        run: source venv/bin/activate \
-          && jupyter nbconvert --to notebook --execute Hlasovani.src.ipynb --output Hlasovani.ipynb \
-          && jupyter nbconvert --to html Hlasovani.ipynb --output Hlasovani.html
+        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.src.ipynb --output Hlasovani.ipynb && jupyter nbconvert --to html Hlasovani.ipynb --output Hlasovani.html
       - name: Commit files
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
