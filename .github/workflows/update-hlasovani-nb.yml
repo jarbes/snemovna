@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - '**.ipynb'
+      - '**.src.ipynb'
       - '**.py'
       - '**.yml'
   schedule:
@@ -24,12 +24,14 @@ jobs:
       - name: Create venv and install requirements
         run: python3 -m venv venv && source venv/bin/activate && pip install wheel && pip install -r requirements.txt
       - name: Run Hlasovani
-        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.src.ipynb --output Hlasovani.ipynb
+        run: source venv/bin/activate \
+          && jupyter nbconvert --to notebook --execute Hlasovani.src.ipynb --output Hlasovani.ipynb \
+          && jupyter nbconvert --to html Hlasovani.ipynb --output Hlasovani.html
       - name: Commit files
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add Hlasovani.ipynb
+          git add Hlasovani.ipynb Hlasovani.html
           git commit -m "Daily run of Hlasovani [github-actions, bot]"
       - name: Push changes
         uses: ad-m/github-push-action@master
