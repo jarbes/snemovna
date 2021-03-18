@@ -2,7 +2,7 @@ bs4
 dash
 html2text
 html5lib
-#jupyterlab
+jupyterlab
 matplotlib
 numpy>=1.18.4
 pandas

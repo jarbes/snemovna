@@ -9,14 +9,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Install conda environment
-        uses: conda-incubator/setup-miniconda@v1
-        with:
-          activate-environment: snemovna
-          environment-file: environment.yml
-          python-version: 3.7
+      - name: Create venv and install requirements
+        run: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
       - name: Run Hlasovani
-        run: jupyter nbconvert --to notebook --execute Hlasovani.ipynb
+        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.ipynb
     #- uses: actions/upload-artifact@master
     #  if: always()
     #  with:
