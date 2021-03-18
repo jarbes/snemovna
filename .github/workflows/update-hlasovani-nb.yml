@@ -3,27 +3,24 @@ name: Execute Hlasovani notebook
 on: [push]
 
 jobs:
-  run:
+  run-notebooks:
+    name: Run Jupyter notebooks for Snemovna
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python
-      uses: actions/setup-python@v2
-    - name: Install newer papermill version
-      run: python3 -m pip install papermill>=2.3.1
-    - uses: yaananth/run-notebook@v1
-      env:
-        RUNNER: ${{ toJson(runner) }}
-        SECRETS: ${{ toJson(secrets) }}
-        GITHUB: ${{ toJson(github) }}
-      with:
-        notebook: "Hlasovani.ipynb"
-        params: "Hlasovani.json"
-        isReport: True
-    - uses: actions/upload-artifact@master
-      if: always()
-      with:
-        name: output
-        path: ${{ RUNNER.temp }}/nb-runner
-      env:
-        RUNNER: ${{ toJson(runner) }}
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Install conda environment
+        uses: conda-incubator/setup-miniconda@v1
+        with:
+          activate-environment: snemovna
+          environment-file: environment.yml
+          python-version: 3.7
+      - name: Run Hlasovani
+        run: jupyter nbconvert --to notebook --execute Hlasovani.ipynb
+    #- uses: actions/upload-artifact@master
+    #  if: always()
+    #  with:
+    #    name: output
+    #    path: ${{ RUNNER.temp }}/nb-runner
+    #  env:
+    #    RUNNER: ${{ toJson(runner) }}
