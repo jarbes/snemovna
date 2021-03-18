@@ -15,12 +15,12 @@ jobs:
       - name: Create venv and install requirements
         run: python3 -m venv venv && source venv/bin/activate && pip install wheel && pip install -r requirements.txt
       - name: Run Hlasovani
-        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.ipynb --output Hlasovani.output.ipynb
+        run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.src.ipynb --output Hlasovani.ipynb
       - name: Commit files
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add Hlasovani.output.ipynb
+          git add Hlasovani.ipynb
           git commit -m "Daily run of Hlasovani[github-actions, bot]" -a
       - name: Push changes
         uses: ad-m/github-push-action@master
