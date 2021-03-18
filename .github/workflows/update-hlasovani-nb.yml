@@ -13,10 +13,8 @@ jobs:
         run: python3 -m venv venv && source venv/bin/activate && pip install wheel && pip install -r requirements.txt
       - name: Run Hlasovani
         run: source venv/bin/activate && jupyter nbconvert --to notebook --execute Hlasovani.ipynb --output Hlasovani.output.ipynb && ls
-    #- uses: actions/upload-artifact@master
-    #  if: always()
-    #  with:
-    #    name: output
-    #    path: ${{ RUNNER.temp }}/nb-runner
-    #  env:
-    #    RUNNER: ${{ toJson(runner) }}
+      - uses: actions/upload-artifact@v2
+        with:
+          name: Hlasovani.output.ipynb
+          path: ${{ github.workspace }}/Hlasovani.output.ipynb
+          if-no-files-found: error
