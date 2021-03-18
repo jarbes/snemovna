@@ -1,6 +1,15 @@
 name: Execute Hlasovani notebook
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.ipynb'
+      - '**.py'
+      - '**.yml'
+  schedule:
+    - cron: 0 15 * * *
 
 jobs:
   run-notebooks:
@@ -21,7 +30,7 @@ jobs:
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add Hlasovani.ipynb
-          git commit -m "Daily run of Hlasovani[github-actions, bot]" -a
+          git commit -m "Daily run of Hlasovani [github-actions, bot]"
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
